@@ -1,0 +1,26 @@
+services:
+  - type: cron              # يشتغل بجدول زمني (مجاني)
+    name: smart-engagement-bot
+    runtime: python
+    schedule: "0 */6 * * *"  # كل 6 ساعات
+    buildCommand: pip install -r twitter_bot/requirements.txt
+    startCommand: python twitter_bot/bot.py
+    envVars:
+      - key: TWITTER_API_KEY
+        sync: false         # تُدخلها يدوياً في Render Dashboard
+      - key: TWITTER_API_SECRET
+        sync: false
+      - key: TWITTER_ACCESS_TOKEN
+        sync: false
+      - key: TWITTER_ACCESS_SECRET
+        sync: false
+      - key: TWITTER_BEARER_TOKEN
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: SEARCH_KEYWORD
+        value: "الذكاء الاصطناعي"
+      - key: SEARCH_LIMIT
+        value: "5"
+      - key: DELAY_BETWEEN_LIKES
+        value: "3"
