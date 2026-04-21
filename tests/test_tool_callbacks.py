@@ -121,7 +121,7 @@ class TestToolPermissionCallbacks:
                 "subtype": "can_use_tool",
                 "tool_name": "DangerousTool",
                 "input": {"command": "rm -rf /"},
-                "permission_suggestions": ["deny"],
+                "permission_suggestions": [{"type": "addRules", "behavior": "deny", "rules": [{"toolName": "DangerousTool", "ruleContent": None}]}],
             },
         }
 

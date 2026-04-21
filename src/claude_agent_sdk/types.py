@@ -169,6 +169,29 @@ class PermissionUpdate:
 
         return result
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "PermissionUpdate":
+        """Parse a PermissionUpdate from the TypeScript control protocol JSON format."""
+        update_type = data["type"]
+        rules: list[PermissionRuleValue] | None = None
+        raw_rules = data.get("rules")
+        if raw_rules is not None:
+            rules = [
+                PermissionRuleValue(
+                    tool_name=r["toolName"],
+                    rule_content=r.get("ruleContent"),
+                )
+                for r in raw_rules
+            ]
+        return cls(
+            type=update_type,
+            rules=rules,
+            behavior=data.get("behavior"),
+            mode=data.get("mode"),
+            directories=data.get("directories"),
+            destination=data.get("destination"),
+        )
+
 
 # Tool callback types
 @dataclass
@@ -1461,8 +1484,7 @@ class SDKControlPermissionRequest(TypedDict):
     subtype: Literal["can_use_tool"]
     tool_name: str
     input: dict[str, Any]
-    # TODO: Add PermissionUpdate type here
-    permission_suggestions: list[Any] | None
+    permission_suggestions: list[dict[str, Any]] | None
     blocked_path: str | None
     tool_use_id: str
     agent_id: NotRequired[str]
