@@ -54,3 +54,8 @@ htmlcov/
 dmypy.json
 .pyre/
 .claude/worktrees/
+
+# AL_HAKIM — ملفات سرية محلية فقط
+KEYS_VAULT.md
+AL_HAKIM.core
+empire.map
