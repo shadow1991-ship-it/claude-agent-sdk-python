@@ -143,11 +143,11 @@ def run_bot() -> None:
             "🏰 بأمرك يا حكيم!\n\n"
             "أنا الأمين الذكي — حارسك وخادمك\n\n"
             "الأوامر:\n"
-            "/حالة — تقرير الإمبراطورية\n"
-            "/فحص — تحقق من سلامة الملفات\n"
-            "/توقيع — إضافة توقيع AL_HAKIM\n"
-            "/تقرير — ملخص يومي\n"
-            "/مساعدة — قائمة الأوامر\n\n"
+            "/status — تقرير الإمبراطورية\n"
+            "/check — تحقق من سلامة الملفات\n"
+            "/sign — إضافة توقيع AL_HAKIM\n"
+            "/report — ملخص يومي\n"
+            "/help — قائمة الأوامر\n\n"
             "أو اسألني أي سؤال بالعربية 🤖"
         )
 
@@ -168,7 +168,7 @@ def run_bot() -> None:
             return
         args = ctx.args
         if not args:
-            await update.message.reply_text("⚠️ استخدام: /توقيع اسم_الملف.py")
+            await update.message.reply_text("⚠️ استخدام: /sign اسم_الملف.py")
             return
         result = _run_guardian(f"--add-sig {args[0]}")
         await update.message.reply_text(f"✅ {result}")
@@ -187,11 +187,11 @@ def run_bot() -> None:
         await update.message.reply_text(
             "👑 AL_HAKIM Guardian — دليل الأوامر\n\n"
             "═══════════════════════════\n"
-            "/حالة    — تقرير كامل عن الإمبراطورية\n"
-            "/فحص     — تحقق من سلامة جميع الملفات\n"
-            "/توقيع [ملف] — أضف توقيع AL_HAKIM\n"
-            "/تقرير   — ملخص يومي شامل\n"
-            "/مساعدة  — هذه القائمة\n"
+            "/status  — تقرير كامل عن الإمبراطورية\n"
+            "/check   — تحقق من سلامة جميع الملفات\n"
+            "/sign [ملف] — أضف توقيع AL_HAKIM\n"
+            "/report  — ملخص يومي شامل\n"
+            "/help    — هذه القائمة\n"
             "═══════════════════════════\n"
             "أو اكتب أي سؤال برمجي وسأجيب 🤖\n\n"
             "🏰 الأمين الذكي في خدمتك دائماً"
@@ -209,11 +209,11 @@ def run_bot() -> None:
     app = Application.builder().token(TELEGRAM_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("حالة", cmd_status))
-    app.add_handler(CommandHandler("فحص", cmd_check))
-    app.add_handler(CommandHandler("توقيع", cmd_sign_file))
-    app.add_handler(CommandHandler("تقرير", cmd_report))
-    app.add_handler(CommandHandler("مساعدة", cmd_help))
+    app.add_handler(CommandHandler("status", cmd_status))
+    app.add_handler(CommandHandler("check", cmd_check))
+    app.add_handler(CommandHandler("sign", cmd_sign_file))
+    app.add_handler(CommandHandler("report", cmd_report))
+    app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("╔════════════════════════════════════════╗")
