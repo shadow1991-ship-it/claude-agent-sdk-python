@@ -20,6 +20,7 @@ from ..types import (
     PermissionMode,
     PermissionResultAllow,
     PermissionResultDeny,
+    PermissionUpdate,
     SDKControlPermissionRequest,
     SDKControlRequest,
     SDKControlResponse,
@@ -341,10 +342,12 @@ class Query:
                 if not self.can_use_tool:
                     raise Exception("canUseTool callback is not provided")
 
+                raw_suggestions = permission_request.get("permission_suggestions") or []
                 context = ToolPermissionContext(
                     signal=None,  # TODO: Add abort signal support
-                    suggestions=permission_request.get("permission_suggestions", [])
-                    or [],
+                    suggestions=[
+                        PermissionUpdate.from_dict(s) for s in raw_suggestions
+                    ],
                     tool_use_id=permission_request.get("tool_use_id"),
                     agent_id=permission_request.get("agent_id"),
                 )
