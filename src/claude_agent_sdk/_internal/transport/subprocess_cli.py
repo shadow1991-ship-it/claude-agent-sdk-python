@@ -355,6 +355,11 @@ class SubprocessCLITransport(Transport):
                 cmd.extend(["--max-thinking-tokens", str(t["budget_tokens"])])
             elif t["type"] == "disabled":
                 cmd.extend(["--thinking", "disabled"])
+
+            # Narrow off the Disabled variant first so mypy knows `t["display"]` is a str
+            # rather than widening to `object` across the union.
+            if t["type"] != "disabled" and "display" in t:
+                cmd.extend(["--thinking-display", t["display"]])
         elif self._options.max_thinking_tokens is not None:
             cmd.extend(
                 ["--max-thinking-tokens", str(self._options.max_thinking_tokens)]
@@ -439,14 +444,8 @@ class SubprocessCLITransport(Transport):
             if self._cwd:
                 process_env["PWD"] = self._cwd
 
-            # Pipe stderr if we have a callback OR debug mode is enabled
-            should_pipe_stderr = (
-                self._options.stderr is not None
-                or "debug-to-stderr" in self._options.extra_args
-            )
-
-            # For backward compat: use debug_stderr file object if no callback and debug is on
-            stderr_dest = PIPE if should_pipe_stderr else None
+            # Pipe stderr only when the caller registered a callback.
+            stderr_dest = PIPE if self._options.stderr is not None else None
 
             self._process = await anyio.open_process(
                 cmd,
@@ -462,7 +461,7 @@ class SubprocessCLITransport(Transport):
                 self._stdout_stream = TextReceiveStream(self._process.stdout)
 
             # Setup stderr stream if piped
-            if should_pipe_stderr and self._process.stderr:
+            if stderr_dest is PIPE and self._process.stderr:
                 self._stderr_stream = TextReceiveStream(self._process.stderr)
                 # Start async task to read stderr
                 self._stderr_task_group = anyio.create_task_group()
@@ -505,15 +504,6 @@ class SubprocessCLITransport(Transport):
                 # Call the stderr callback if provided
                 if self._options.stderr:
                     self._options.stderr(line_str)
-
-                # For backward compatibility: write to debug_stderr if in debug mode
-                elif (
-                    "debug-to-stderr" in self._options.extra_args
-                    and self._options.debug_stderr
-                ):
-                    self._options.debug_stderr.write(line_str + "\n")
-                    if hasattr(self._options.debug_stderr, "flush"):
-                        self._options.debug_stderr.flush()
         except anyio.ClosedResourceError:
             pass  # Stream closed, exit normally
         except Exception:
