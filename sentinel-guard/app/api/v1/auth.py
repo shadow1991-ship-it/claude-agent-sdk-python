@@ -2,14 +2,23 @@ import re
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from app.core.config import settings
 from app.core.database import get_db
-from app.core.security import hash_password, verify_password, create_access_token, create_refresh_token, decode_token
+from app.core.security import (
+    hash_password, verify_password,
+    create_access_token, create_refresh_token, decode_token,
+)
+from app.api.deps import get_current_user
+from app.main import limiter
 from app.models.user import User, APIKey
 from app.models.organization import Organization
-from app.schemas.auth import UserRegister, UserLogin, TokenResponse, RefreshRequest, UserOut, APIKeyCreate, APIKeyOut
+from app.schemas.auth import (
+    UserRegister, UserLogin, TokenResponse, RefreshRequest,
+    UserOut, APIKeyCreate, APIKeyOut,
+)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -21,7 +30,8 @@ def _slugify(name: str) -> str:
 
 
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
-async def register(payload: UserRegister, db: AsyncSession = Depends(get_db)):
+@limiter.limit(settings.RATE_REGISTER)
+async def register(request: Request, payload: UserRegister, db: AsyncSession = Depends(get_db)):
     existing = await db.execute(select(User).where(User.email == payload.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -45,7 +55,8 @@ async def register(payload: UserRegister, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(payload: UserLogin, db: AsyncSession = Depends(get_db)):
+@limiter.limit(settings.RATE_LOGIN)
+async def login(request: Request, payload: UserLogin, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == payload.email))
     user = result.scalar_one_or_none()
 
@@ -62,7 +73,8 @@ async def login(payload: UserLogin, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh(payload: RefreshRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute")
+async def refresh(request: Request, payload: RefreshRequest, db: AsyncSession = Depends(get_db)):
     data = decode_token(payload.refresh_token)
     if not data or data.get("type") != "refresh":
         raise HTTPException(status_code=401, detail="Invalid refresh token")
@@ -78,11 +90,16 @@ async def refresh(payload: RefreshRequest, db: AsyncSession = Depends(get_db)):
     )
 
 
+@router.get("/me", response_model=UserOut)
+async def get_me(current_user: User = Depends(get_current_user)):
+    return current_user
+
+
 @router.post("/api-keys", response_model=APIKeyOut)
 async def create_api_key(
     payload: APIKeyCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(__import__("app.api.deps", fromlist=["get_current_user"]).get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     raw_key = f"sg_{secrets.token_urlsafe(32)}"
     expires_at = None
@@ -104,3 +121,45 @@ async def create_api_key(
         key=raw_key,
         created_at=api_key.created_at.isoformat(),
     )
+
+
+@router.get("/api-keys", response_model=list[APIKeyOut])
+async def list_api_keys(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(APIKey)
+        .where(APIKey.user_id == current_user.id, APIKey.is_active == True)
+        .order_by(APIKey.created_at.desc())
+    )
+    return [
+        APIKeyOut(
+            id=str(k.id),
+            name=k.name,
+            key="sg_***hidden***",
+            created_at=k.created_at.isoformat(),
+        )
+        for k in result.scalars().all()
+    ]
+
+
+@router.delete("/api-keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_api_key(
+    key_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        uid = uuid.UUID(key_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid key ID")
+
+    result = await db.execute(
+        select(APIKey).where(APIKey.id == uid, APIKey.user_id == current_user.id)
+    )
+    key = result.scalar_one_or_none()
+    if not key:
+        raise HTTPException(status_code=404, detail="API key not found")
+    key.is_active = False
+    await db.flush()

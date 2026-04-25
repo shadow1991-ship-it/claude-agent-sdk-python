@@ -39,6 +39,27 @@ class Settings(BaseSettings):
     DNS_VERIFICATION_PREFIX: str = "sentinel-verification"
     HTTP_VERIFICATION_PATH: str = ".well-known/sentinel"
 
+    # CORS & Trusted Hosts (comma-separated in .env)
+    CORS_ORIGINS: str = "*"
+    ALLOWED_HOSTS: str = "*"
+
+    # Rate limiting (requests per window)
+    RATE_LOGIN: str = "5/minute"
+    RATE_REGISTER: str = "3/minute"
+    RATE_SCAN: str = "10/minute"
+    RATE_ASSETS: str = "30/minute"
+    RATE_DEFAULT: str = "60/minute"
+
+    def cors_origins_list(self) -> list[str]:
+        if self.CORS_ORIGINS == "*":
+            return ["*"]
+        return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+
+    def allowed_hosts_list(self) -> list[str]:
+        if self.ALLOWED_HOSTS == "*":
+            return ["*"]
+        return [h.strip() for h in self.ALLOWED_HOSTS.split(",") if h.strip()]
+
 
 @lru_cache
 def get_settings() -> Settings:

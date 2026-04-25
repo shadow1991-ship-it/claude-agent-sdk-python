@@ -1,10 +1,13 @@
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from celery.result import AsyncResult
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
+from app.core.config import settings
 from app.core.database import get_db
 from app.api.deps import get_current_user
+from app.main import limiter
 from app.models.asset import Asset, VerificationStatus
 from app.models.scan import Scan, ScanStatus
 from app.models.user import User
@@ -14,7 +17,9 @@ router = APIRouter(prefix="/scans", tags=["Scans"])
 
 
 @router.post("", response_model=ScanSummary, status_code=status.HTTP_202_ACCEPTED)
+@limiter.limit(settings.RATE_SCAN)
 async def request_scan(
+    request: Request,
     payload: ScanRequest,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -97,6 +102,10 @@ async def cancel_scan(
     scan = await _get_scan(scan_id, user, db)
     if scan.status not in (ScanStatus.QUEUED, ScanStatus.RUNNING):
         raise HTTPException(status_code=400, detail="Scan is not cancellable")
+
+    if scan.celery_task_id:
+        AsyncResult(scan.celery_task_id).revoke(terminate=True, signal="SIGTERM")
+
     scan.status = ScanStatus.CANCELLED
     await db.flush()
 
