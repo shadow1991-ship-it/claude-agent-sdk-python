@@ -27,8 +27,8 @@ app = FastAPI(
         "Professional security scanning API. "
         "All scans run exclusively on verified, owned assets."
     ),
-    docs_url="/docs" if settings.DEBUG else None,
-    redoc_url="/redoc" if settings.DEBUG else None,
+    docs_url="/docs",
+    redoc_url="/redoc",
     lifespan=lifespan,
 )
 
