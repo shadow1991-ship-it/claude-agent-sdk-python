@@ -32,11 +32,11 @@ class ScanTask(Task):
 
 
 @celery_app.task(bind=True, base=ScanTask, name="run_scan")
-def run_scan(self, scan_id: str, nmap_arguments: str) -> dict:
-    return asyncio.run(_execute_scan(scan_id, nmap_arguments))
+def run_scan(self, scan_id: str, nmap_arguments: str, dockerfile_url: str | None = None, image_ref: str | None = None) -> dict:
+    return asyncio.run(_execute_scan(scan_id, nmap_arguments, dockerfile_url, image_ref))
 
 
-async def _execute_scan(scan_id: str, nmap_arguments: str) -> dict:
+async def _execute_scan(scan_id: str, nmap_arguments: str, dockerfile_url: str | None = None, image_ref: str | None = None) -> dict:
     async with AsyncSessionLocal() as db:
         result = await db.execute(
             select(Scan)
@@ -54,12 +54,19 @@ async def _execute_scan(scan_id: str, nmap_arguments: str) -> dict:
         await db.commit()
 
         try:
-            results = await _orchestrator.run(scan.asset, scan.scan_type, nmap_arguments)
+            results = await _orchestrator.run(
+                scan.asset, scan.scan_type, nmap_arguments,
+                dockerfile_url=dockerfile_url,
+                image_ref=image_ref,
+            )
 
             scan.shodan_data = results.get("shodan_data")
             scan.nmap_data = results.get("nmap_data")
             scan.ssl_data = results.get("ssl_data")
             scan.headers_data = results.get("headers_data")
+            scan.dockerfile_data = results.get("dockerfile_data")
+            scan.sbom_data = results.get("sbom_data")
+            scan.ai_data = results.get("ai_data")
             scan.risk_score = results.get("risk_score", 0.0)
 
             for raw_finding in results.get("findings", []):

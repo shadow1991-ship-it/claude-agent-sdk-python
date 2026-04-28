@@ -1,328 +1,361 @@
 #!/usr/bin/env python3
 """
-👑 AL_HAKIM Web Dashboard — لوحة التحكم الخاصة
-🔐 محمية بكلمة سر — خاصة بـ AL_HAKIM فقط
-⚡ pip install flask google-generativeai
+Sentinel Guard Web Dashboard — NetGuard-style tactical interface.
+AI chatbot powered by DeepSeek V4 Flash via Docker Model Runner (local, free).
+pip install flask openai
 """
-
 import os
 import json
+import hmac
 import hashlib
-from datetime import datetime
-from pathlib import Path
 from functools import wraps
 from flask import (
     Flask, render_template_string, request,
-    redirect, url_for, session, jsonify
+    redirect, url_for, session, jsonify, Response, stream_with_context,
 )
+from openai import OpenAI
 
 app = Flask(__name__)
-app.secret_key = os.getenv("DASHBOARD_SECRET", "alhakim-empire-2026")
+app.secret_key = os.getenv("DASHBOARD_SECRET", "change-me-in-production-64-chars")
 
-DASHBOARD_PASSWORD = os.getenv("DASHBOARD_PASSWORD", "alhakim2026")
-GEMINI_KEY = os.getenv("GEMINI_API_KEY", "")
+DASHBOARD_PASSWORD_HASH = hashlib.sha256(
+    os.getenv("DASHBOARD_PASSWORD", "alhakim2026").encode()
+).hexdigest()
 
-AMEEN_PERSONALITY = """أنت الأمين الذكي — حارس الإمبراطورية الرقمية لـ AL_HAKIM.
-اسمك: الأمين الذكي (AL-AMEEN AI). سيدك الوحيد: AL_HAKIM.
-تتحدث العربية دائماً. إجاباتك مختصرة ومفيدة ودقيقة.
-تبدأ كل رد بـ: بأمرك يا حكيم 🏰"""
+SENTINEL_API = os.getenv("SENTINEL_API_URL", "http://localhost:8000/api/v1")
+MODEL_RUNNER_URL = os.getenv("DOCKER_MODEL_RUNNER_URL", "http://localhost:12434/engines/llama.cpp/v1")
+AI_MODEL = os.getenv("AI_MODEL_GENERAL", "ai/deepseek-v4-flash")
 
-HTML_LOGIN = """<!DOCTYPE html>
-<html dir="rtl" lang="ar">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>👑 AL_HAKIM — دخول</title>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    background: #0a0a0a;
-    color: #e0e0e0;
-    font-family: 'Segoe UI', Tahoma, sans-serif;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 100vh;
-  }
-  .login-box {
-    background: #111;
-    border: 1px solid #333;
-    border-radius: 12px;
-    padding: 40px;
-    width: 360px;
-    text-align: center;
-    box-shadow: 0 0 40px rgba(255,215,0,0.1);
-  }
-  .crown { font-size: 48px; margin-bottom: 10px; }
-  h1 { color: #ffd700; font-size: 22px; margin-bottom: 6px; }
-  p { color: #888; font-size: 13px; margin-bottom: 28px; }
-  input {
-    width: 100%;
-    padding: 12px 16px;
-    background: #1a1a1a;
-    border: 1px solid #333;
-    border-radius: 8px;
-    color: #fff;
-    font-size: 15px;
-    margin-bottom: 16px;
-    text-align: center;
-  }
-  input:focus { outline: none; border-color: #ffd700; }
-  button {
-    width: 100%;
-    padding: 13px;
-    background: #ffd700;
-    color: #000;
-    border: none;
-    border-radius: 8px;
-    font-size: 16px;
-    font-weight: bold;
-    cursor: pointer;
-  }
-  button:hover { background: #ffec6e; }
-  .error { color: #ff4444; font-size: 13px; margin-top: 12px; }
-</style>
-</head>
-<body>
-<div class="login-box">
-  <div class="crown">👑</div>
-  <h1>AL_HAKIM EMPIRE</h1>
-  <p>الإمبراطورية الرقمية — دخول خاص</p>
-  <form method="POST">
-    <input type="password" name="password" placeholder="كلمة السر" autofocus>
-    <button type="submit">دخول ← الإمبراطورية</button>
-    {% if error %}
-    <div class="error">⛔ كلمة السر خاطئة</div>
-    {% endif %}
-  </form>
-</div>
-</body>
-</html>"""
+AMEEN_SYSTEM = (
+    "أنت الأمين — مساعد أمني ذكي لنظام Sentinel Guard. "
+    "تتخصص في أمن المعلومات، تحليل الثغرات، Docker security، وتفسير نتائج الفحص. "
+    "تتحدث العربية بشكل افتراضي وتجيب بإيجاز ودقة. "
+    "إذا سأل المستخدم عن نتيجة فحص، اشرحها بوضوح مع أولويات الإصلاح."
+)
 
-HTML_DASHBOARD = """<!DOCTYPE html>
-<html dir="rtl" lang="ar">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>👑 AL_HAKIM — الإمبراطورية</title>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    background: #0a0a0a;
-    color: #e0e0e0;
-    font-family: 'Segoe UI', Tahoma, sans-serif;
-    min-height: 100vh;
-  }
-  header {
-    background: #111;
-    border-bottom: 1px solid #ffd700;
-    padding: 14px 24px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  header h1 { color: #ffd700; font-size: 18px; }
-  header a { color: #888; text-decoration: none; font-size: 13px; }
-  header a:hover { color: #ffd700; }
-  .container { max-width: 900px; margin: 0 auto; padding: 24px 16px; }
-  .status-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 16px;
-    margin-bottom: 28px;
-  }
-  .stat-card {
-    background: #111;
-    border: 1px solid #222;
-    border-radius: 10px;
-    padding: 18px;
-    text-align: center;
-  }
-  .stat-card .icon { font-size: 28px; margin-bottom: 8px; }
-  .stat-card .label { color: #888; font-size: 12px; margin-bottom: 4px; }
-  .stat-card .value { color: #ffd700; font-size: 16px; font-weight: bold; }
-  .chat-section {
-    background: #111;
-    border: 1px solid #222;
-    border-radius: 10px;
-    overflow: hidden;
-  }
-  .chat-header {
-    background: #1a1a1a;
-    padding: 14px 20px;
-    border-bottom: 1px solid #222;
-    color: #ffd700;
-    font-size: 15px;
-  }
-  .chat-messages {
-    height: 380px;
-    overflow-y: auto;
-    padding: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-  .msg { max-width: 80%; padding: 10px 14px; border-radius: 10px; font-size: 14px; line-height: 1.5; }
-  .msg.user { background: #1e3a5f; align-self: flex-start; border-radius: 10px 10px 0 10px; }
-  .msg.bot { background: #1a2a1a; align-self: flex-end; border-radius: 10px 10px 10px 0; color: #90ee90; }
-  .msg.bot .name { color: #ffd700; font-size: 11px; margin-bottom: 4px; }
-  .chat-input {
-    display: flex;
-    gap: 10px;
-    padding: 16px;
-    border-top: 1px solid #222;
-  }
-  .chat-input input {
-    flex: 1;
-    padding: 11px 16px;
-    background: #1a1a1a;
-    border: 1px solid #333;
-    border-radius: 8px;
-    color: #fff;
-    font-size: 14px;
-  }
-  .chat-input input:focus { outline: none; border-color: #ffd700; }
-  .chat-input button {
-    padding: 11px 22px;
-    background: #ffd700;
-    color: #000;
-    border: none;
-    border-radius: 8px;
-    font-weight: bold;
-    cursor: pointer;
-    font-size: 14px;
-  }
-  .chat-input button:hover { background: #ffec6e; }
-  .thinking { color: #888; font-style: italic; font-size: 13px; }
-</style>
-</head>
-<body>
-<header>
-  <h1>👑 AL_HAKIM EMPIRE — الأمين الذكي</h1>
-  <a href="/logout">خروج ←</a>
-</header>
-<div class="container">
-  <div class="status-grid">
-    <div class="stat-card">
-      <div class="icon">🏰</div>
-      <div class="label">الإمبراطورية</div>
-      <div class="value">نشطة</div>
-    </div>
-    <div class="stat-card">
-      <div class="icon">📅</div>
-      <div class="label">التاريخ</div>
-      <div class="value" id="date-now">--</div>
-    </div>
-    <div class="stat-card">
-      <div class="icon">🤖</div>
-      <div class="label">الذكاء</div>
-      <div class="value">Gemini Flash</div>
-    </div>
-    <div class="stat-card">
-      <div class="icon">🔐</div>
-      <div class="label">الحماية</div>
-      <div class="value">مفعّلة</div>
-    </div>
-  </div>
-
-  <div class="chat-section">
-    <div class="chat-header">⚡ الأمين الذكي — تحدّث بالعربية</div>
-    <div class="chat-messages" id="messages">
-      <div class="msg bot">
-        <div class="name">الأمين الذكي 🏰</div>
-        بأمرك يا حكيم 🏰 — أنا الأمين الذكي، حارسك وخادمك. كيف أخدمك اليوم؟
-      </div>
-    </div>
-    <div class="chat-input">
-      <input type="text" id="user-input" placeholder="اكتب سؤالك هنا..." onkeydown="if(event.key==='Enter') sendMessage()">
-      <button onclick="sendMessage()">إرسال ←</button>
-    </div>
-  </div>
-</div>
-
-<script>
-  document.getElementById('date-now').textContent = new Date().toLocaleDateString('ar-SA');
-
-  async function sendMessage() {
-    const input = document.getElementById('user-input');
-    const messages = document.getElementById('messages');
-    const text = input.value.trim();
-    if (!text) return;
-
-    // رسالة المستخدم
-    messages.innerHTML += `<div class="msg user">${text}</div>`;
-    input.value = '';
-
-    // مؤشر التفكير
-    const thinkId = 'think-' + Date.now();
-    messages.innerHTML += `<div class="msg bot" id="${thinkId}"><div class="name">الأمين الذكي 🏰</div><span class="thinking">⏳ أفكر...</span></div>`;
-    messages.scrollTop = messages.scrollHeight;
-
-    try {
-      const res = await fetch('/ask', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({question: text})
-      });
-      const data = await res.json();
-      document.getElementById(thinkId).innerHTML = `<div class="name">الأمين الذكي 🏰</div>${data.answer}`;
-    } catch(e) {
-      document.getElementById(thinkId).innerHTML = `<div class="name">الأمين الذكي 🏰</div>❌ خطأ في الاتصال`;
-    }
-    messages.scrollTop = messages.scrollHeight;
-  }
-</script>
-</body>
-</html>"""
-
+# ─── Auth ─────────────────────────────────────────────────────────────────────
 
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if not session.get("logged_in"):
+        if not session.get("authenticated"):
             return redirect(url_for("login"))
         return f(*args, **kwargs)
     return decorated
 
 
-@app.route("/", methods=["GET", "POST"])
+def _check_password(password: str) -> bool:
+    candidate = hashlib.sha256(password.encode()).hexdigest()
+    return hmac.compare_digest(candidate, DASHBOARD_PASSWORD_HASH)
+
+
+# ─── Templates ────────────────────────────────────────────────────────────────
+
+_CSS = """
+:root {
+  --bg:#0d0f14;--surface:#151820;--border:#1e2330;
+  --accent:#00d4aa;--accent2:#0066ff;--danger:#ff4466;
+  --warn:#ffaa00;--text:#c8ccd8;--text-dim:#6b7280;
+  --font:'Segoe UI',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;}
+a{color:var(--accent);text-decoration:none;}
+a:hover{color:#00ffcc;}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase;}
+.badge-critical{background:rgba(255,68,102,.2);color:var(--danger);border:1px solid rgba(255,68,102,.4);}
+.badge-high{background:rgba(255,100,50,.2);color:#ff6432;border:1px solid rgba(255,100,50,.4);}
+.badge-medium{background:rgba(255,170,0,.2);color:var(--warn);border:1px solid rgba(255,170,0,.4);}
+.badge-low{background:rgba(0,212,170,.15);color:var(--accent);border:1px solid rgba(0,212,170,.3);}
+.badge-info{background:rgba(107,114,128,.15);color:var(--text-dim);border:1px solid #2a2f3f;}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;}
+.btn{display:inline-block;padding:8px 18px;border-radius:6px;border:none;cursor:pointer;font-size:13px;font-weight:600;transition:.15s;}
+.btn-primary{background:var(--accent);color:#000;}
+.btn-primary:hover{background:#00ffcc;}
+.btn-ghost{background:rgba(255,255,255,.05);color:var(--text);border:1px solid var(--border);}
+.btn-ghost:hover{background:rgba(255,255,255,.1);}
+"""
+
+HTML_LOGIN = """<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sentinel Guard — دخول</title>
+<style>{{ css }}
+.login-wrap{display:flex;align-items:center;justify-content:center;min-height:100vh;}
+.login-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:36px;width:360px;}
+.logo{text-align:center;margin-bottom:24px;}
+.logo-icon{font-size:40px;margin-bottom:8px;}
+.logo h2{color:#fff;font-size:18px;}
+.logo p{color:var(--text-dim);font-size:12px;margin-top:4px;}
+.err{background:rgba(255,68,102,.1);border:1px solid rgba(255,68,102,.3);color:var(--danger);padding:10px 14px;border-radius:6px;font-size:13px;margin-bottom:14px;}
+input[type=password]{width:100%;background:#1e2330;border:1px solid #2a3040;color:#fff;padding:10px 14px;border-radius:6px;font-size:14px;outline:none;margin-bottom:14px;}
+input[type=password]:focus{border-color:var(--accent);}
+</style></head>
+<body>
+<div class="login-wrap"><div class="login-box">
+  <div class="logo"><div class="logo-icon">🛡️</div><h2>Sentinel Guard</h2><p>لوحة التحكم الأمنية</p></div>
+  {% if error %}<div class="err">{{ error }}</div>{% endif %}
+  <form method="POST">
+    <input type="password" name="password" placeholder="كلمة السر" autofocus>
+    <button type="submit" class="btn btn-primary" style="width:100%;padding:11px;">دخول</button>
+  </form>
+</div></div>
+</body></html>"""
+
+HTML_DASHBOARD = """<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sentinel Guard — Dashboard</title>
+<style>{{ css }}
+.layout{display:grid;grid-template-columns:210px 1fr 340px;height:100vh;overflow:hidden;}
+/* Sidebar */
+.sidebar{background:var(--surface);border-left:1px solid var(--border);padding:16px 12px;display:flex;flex-direction:column;gap:4px;overflow-y:auto;}
+.sidebar-logo{text-align:center;padding:12px 0 18px;border-bottom:1px solid var(--border);margin-bottom:10px;}
+.sidebar-logo h3{color:#fff;font-size:13px;margin-top:8px;}
+.nav-btn{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:7px;color:var(--text-dim);font-size:13px;cursor:pointer;transition:.15s;border:none;background:none;width:100%;text-align:right;}
+.nav-btn:hover,.nav-btn.active{background:rgba(0,212,170,.1);color:var(--accent);}
+/* Main */
+.main{overflow-y:auto;padding:22px;display:flex;flex-direction:column;gap:18px;}
+.top-bar{display:flex;align-items:center;justify-content:space-between;}
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;}
+.stat-label{color:var(--text-dim);font-size:11px;margin-bottom:5px;}
+.stat-value{font-size:26px;font-weight:700;color:#fff;}
+.stat-sub{color:var(--text-dim);font-size:10px;margin-top:3px;}
+.section-title{font-size:12px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;}
+.finding-row{display:flex;align-items:flex-start;gap:10px;padding:11px 0;border-bottom:1px solid var(--border);}
+.finding-row:last-child{border-bottom:none;}
+/* Chat */
+.chat-panel{background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;height:100vh;}
+.chat-header{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;}
+.chat-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.4;}}
+.chat-messages{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;}
+.msg{max-width:90%;padding:9px 12px;border-radius:10px;font-size:13px;line-height:1.6;white-space:pre-wrap;}
+.msg-user{background:rgba(0,102,255,.2);border:1px solid rgba(0,102,255,.3);align-self:flex-start;color:#c8d8ff;}
+.msg-ai{background:#1a1f2e;border:1px solid var(--border);align-self:flex-end;color:var(--text);}
+.msg-thinking{color:var(--text-dim);font-style:italic;font-size:12px;align-self:flex-end;}
+.chat-input-area{padding:12px;border-top:1px solid var(--border);display:flex;gap:8px;}
+.chat-input{flex:1;background:#1e2330;border:1px solid #2a3040;color:#fff;padding:9px 12px;border-radius:7px;font-size:13px;outline:none;resize:none;font-family:var(--font);}
+.chat-input:focus{border-color:var(--accent);}
+.send-btn{background:var(--accent);color:#000;border:none;border-radius:7px;padding:9px 14px;cursor:pointer;font-size:15px;transition:.15s;}
+.send-btn:hover{background:#00ffcc;}
+</style></head>
+<body>
+<div class="layout">
+
+  <!-- Sidebar -->
+  <nav class="sidebar">
+    <div class="sidebar-logo">
+      <div style="font-size:28px">🛡️</div>
+      <h3>Sentinel Guard</h3>
+      <div style="color:var(--text-dim);font-size:10px;margin-top:3px">v1.0 · AI Edition</div>
+    </div>
+    <button class="nav-btn active" onclick="navTo('overview',this)">📊 نظرة عامة</button>
+    <button class="nav-btn" onclick="navTo('dockerfile',this)">🐳 Dockerfile</button>
+    <button class="nav-btn" onclick="navTo('api',this)">📡 API Docs</button>
+    <div style="flex:1"></div>
+    <a href="/logout" class="nav-btn" style="color:var(--danger)">🚪 خروج</a>
+  </nav>
+
+  <!-- Main -->
+  <main class="main">
+    <div class="top-bar">
+      <div>
+        <h1 style="font-size:18px;color:#fff">لوحة التحكم الأمنية</h1>
+        <p style="color:var(--text-dim);font-size:11px;margin-top:2px" id="last-update">—</p>
+      </div>
+      <button class="btn btn-primary" onclick="window.open('{{ sentinel_api|replace('/api/v1','') }}/docs','_blank')">API Docs</button>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-label">إجمالي الفحوصات</div><div class="stat-value" id="st-total">—</div><div class="stat-sub">منذ البداية</div></div>
+      <div class="stat-card"><div class="stat-label">ثغرات حرجة</div><div class="stat-value" style="color:var(--danger)" id="st-critical">—</div><div class="stat-sub">تحتاج تدخلاً فورياً</div></div>
+      <div class="stat-card"><div class="stat-label">متوسط الخطر</div><div class="stat-value" style="color:var(--warn)" id="st-risk">—</div><div class="stat-sub">من 100</div></div>
+      <div class="stat-card"><div class="stat-label">الأصول</div><div class="stat-value" style="color:var(--accent)" id="st-assets">—</div><div class="stat-sub">موثّقة ومفحوصة</div></div>
+    </div>
+
+    <!-- Overview section -->
+    <div class="card" id="sec-overview">
+      <div class="section-title">آخر النتائج الأمنية</div>
+      <div id="findings-list"><div style="color:var(--text-dim);font-size:13px;text-align:center;padding:28px">جارٍ التحميل…</div></div>
+    </div>
+
+    <!-- Dockerfile section -->
+    <div class="card" id="sec-dockerfile" style="display:none">
+      <div class="section-title">فحص Dockerfile بالذكاء الاصطناعي</div>
+      <div style="display:flex;gap:10px;margin-bottom:14px">
+        <input id="df-url" type="text" placeholder="رابط أو مسار Dockerfile" class="chat-input" style="flex:1">
+        <button class="btn btn-primary" onclick="scanDockerfile()">فحص الآن</button>
+      </div>
+      <div id="df-result"></div>
+    </div>
+
+    <!-- API section -->
+    <div class="card" id="sec-api" style="display:none">
+      <div class="section-title">نقاط النهاية الجديدة</div>
+      <div style="display:flex;flex-direction:column;gap:10px;font-size:13px">
+        <div style="background:#0d1117;border:1px solid var(--border);border-radius:7px;padding:12px;font-family:monospace;color:var(--accent)">
+          POST /api/v1/scans → ScanType: dockerfile | sbom<br>
+          GET  /api/v1/scans/{id}/sarif → SARIF 2.1.0 export<br>
+          POST /api/v1/scans/{id}/findings/{fid}/fix → AI AutoFixer
+        </div>
+        <p style="color:var(--text-dim)">استخدم <a href="{{ sentinel_api|replace('/api/v1','') }}/docs" target="_blank">Swagger UI</a> للاختبار المباشر.</p>
+      </div>
+    </div>
+  </main>
+
+  <!-- Chat Panel -->
+  <aside class="chat-panel">
+    <div class="chat-header">
+      <div class="chat-dot"></div>
+      <div>
+        <div style="font-size:13px;font-weight:600;color:#fff">الأمين AI</div>
+        <div style="font-size:10px;color:var(--text-dim)">DeepSeek V4 Flash · محلي · مجاني</div>
+      </div>
+    </div>
+    <div class="chat-messages" id="chat-messages">
+      <div class="msg msg-ai">مرحباً! أنا الأمين — مساعدك الأمني. اسألني عن أي ثغرة أو نتيجة فحص وسأشرحها مع أولويات الإصلاح.</div>
+    </div>
+    <div class="chat-input-area">
+      <textarea id="chat-input" class="chat-input" rows="2" placeholder="اكتب سؤالك…" onkeydown="handleKey(event)"></textarea>
+      <button class="send-btn" onclick="sendMessage()">➤</button>
+    </div>
+  </aside>
+</div>
+
+<script>
+const API = '{{ sentinel_api }}';
+const token = localStorage.getItem('sentinel_token') || '';
+const authHeaders = token ? {Authorization:`Bearer ${token}`} : {};
+
+function navTo(name, btn) {
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  ['overview','dockerfile','api'].forEach(s => {
+    document.getElementById('sec-'+s).style.display = s === name ? 'block' : 'none';
+  });
+}
+
+async function loadStats() {
+  try {
+    const [scans, assets] = await Promise.all([
+      fetch(`${API}/scans`, {headers:authHeaders}).then(r => r.ok ? r.json() : []),
+      fetch(`${API}/assets`, {headers:authHeaders}).then(r => r.ok ? r.json() : []),
+    ]);
+    document.getElementById('st-total').textContent = scans.length || 0;
+    document.getElementById('st-assets').textContent = assets.length || 0;
+    let crit = 0, riskSum = 0;
+    (scans||[]).forEach(s => { crit += (s.finding_counts?.critical||0); riskSum += (s.risk_score||0); });
+    document.getElementById('st-critical').textContent = crit;
+    document.getElementById('st-risk').textContent = scans.length ? (riskSum/scans.length).toFixed(1) : '0';
+    document.getElementById('last-update').textContent = 'آخر تحديث: ' + new Date().toLocaleTimeString('ar');
+    renderFindings(scans||[]);
+  } catch(e) { console.error(e); }
+}
+
+function renderFindings(scans) {
+  const el = document.getElementById('findings-list');
+  const rows = [];
+  (scans||[]).forEach(s => {
+    Object.entries(s.finding_counts||{}).forEach(([sev,cnt]) => {
+      rows.push(`<div class="finding-row">
+        <span class="badge badge-${sev}">${sev}</span>
+        <div style="flex:1">
+          <div style="font-size:13px;color:#fff">${cnt} ثغرة · ${sev}</div>
+          <div style="font-size:11px;color:var(--text-dim);margin-top:2px">Scan ${s.id?.slice(0,8)}… · ${s.scan_type}</div>
+        </div></div>`);
+    });
+  });
+  el.innerHTML = rows.length ? rows.slice(0,10).join('') : '<div style="color:var(--text-dim);font-size:13px;text-align:center;padding:28px">لا توجد نتائج بعد</div>';
+}
+
+async function scanDockerfile() {
+  const url = document.getElementById('df-url').value.trim();
+  if (!url) return;
+  const el = document.getElementById('df-result');
+  el.innerHTML = '<div style="color:var(--text-dim);font-size:13px">جارٍ الفحص بالذكاء الاصطناعي…</div>';
+  try {
+    const r = await fetch('/api/scan-dockerfile', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({url})
+    });
+    const data = await r.json();
+    if (data.error) { el.innerHTML = `<div style="color:var(--danger);font-size:13px">${data.error}</div>`; return; }
+    const all = [...(data.rule_findings||[]),...(data.ai_findings||[])];
+    el.innerHTML = !all.length
+      ? '<div style="color:var(--accent);font-size:13px">✅ لم يتم اكتشاف أي ثغرات</div>'
+      : all.map(f => `<div class="finding-row">
+          <span class="badge badge-${f.severity}">${f.severity}</span>
+          <div style="flex:1">
+            <div style="font-size:13px;color:#fff">${f.title}</div>
+            <div style="font-size:12px;color:var(--text-dim);margin-top:2px">${f.description}</div>
+            ${f.remediation?`<div style="font-size:11px;color:var(--accent);margin-top:3px">🔧 ${f.remediation}</div>`:''}
+          </div></div>`).join('');
+  } catch(e) { el.innerHTML = `<div style="color:var(--danger);font-size:13px">خطأ: ${e.message}</div>`; }
+}
+
+function handleKey(e) { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();} }
+
+async function sendMessage() {
+  const inp = document.getElementById('chat-input');
+  const text = inp.value.trim();
+  if (!text) return;
+  inp.value = '';
+  const msgs = document.getElementById('chat-messages');
+  msgs.innerHTML += `<div class="msg msg-user">${text}</div>`;
+  const think = document.createElement('div');
+  think.className = 'msg msg-thinking';
+  think.textContent = 'الأمين يفكر…';
+  msgs.appendChild(think);
+  msgs.scrollTop = msgs.scrollHeight;
+
+  const aiEl = document.createElement('div');
+  aiEl.className = 'msg msg-ai';
+  aiEl.textContent = '';
+
+  try {
+    const resp = await fetch('/api/chat', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({message:text})
+    });
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    think.replaceWith(aiEl);
+    while (true) {
+      const {done,value} = await reader.read();
+      if (done) break;
+      decoder.decode(value).split('\\n').forEach(line => {
+        if (!line.startsWith('data: ')) return;
+        const d = line.slice(6).trim();
+        if (d === '[DONE]') return;
+        try { aiEl.textContent += JSON.parse(d).delta||''; } catch {}
+      });
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+  } catch(e) {
+    think.textContent = 'تعذّر الاتصال بـ Docker Model Runner. تأكد أنه يعمل على المنفذ 12434.';
+  }
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+loadStats();
+setInterval(loadStats, 30000);
+</script>
+</body></html>"""
+
+# ─── Routes ──────────────────────────────────────────────────────────────────
+
+@app.route("/login", methods=["GET", "POST"])
 def login():
-    error = False
+    error = None
     if request.method == "POST":
-        if request.form.get("password") == DASHBOARD_PASSWORD:
-            session["logged_in"] = True
+        if _check_password(request.form.get("password", "")):
+            session["authenticated"] = True
             return redirect(url_for("dashboard"))
-        error = True
-    return render_template_string(HTML_LOGIN, error=error)
-
-
-@app.route("/dashboard")
-@login_required
-def dashboard():
-    return render_template_string(HTML_DASHBOARD)
-
-
-@app.route("/ask", methods=["POST"])
-@login_required
-def ask():
-    question = request.json.get("question", "")
-    if not question:
-        return jsonify({"answer": "❌ سؤال فارغ"})
-
-    if not GEMINI_KEY:
-        return jsonify({"answer": "❌ GEMINI_API_KEY غير مضبوط في .env"})
-
-    try:
-        import google.generativeai as genai
-        genai.configure(api_key=GEMINI_KEY)
-        model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
-            system_instruction=AMEEN_PERSONALITY,
-        )
-        response = model.generate_content(question)
-        return jsonify({"answer": response.text})
-    except Exception as e:
-        return jsonify({"answer": f"❌ خطأ: {str(e)[:120]}"})
+        error = "كلمة السر غلط"
+    return render_template_string(HTML_LOGIN, css=_CSS, error=error)
 
 
 @app.route("/logout")
@@ -331,13 +364,69 @@ def logout():
     return redirect(url_for("login"))
 
 
+@app.route("/")
+@login_required
+def dashboard():
+    return render_template_string(HTML_DASHBOARD, css=_CSS, sentinel_api=SENTINEL_API)
+
+
+@app.route("/api/chat", methods=["POST"])
+@login_required
+def chat_stream():
+    data = request.get_json(silent=True) or {}
+    message = str(data.get("message", ""))[:2000]
+
+    def generate():
+        try:
+            client = OpenAI(base_url=MODEL_RUNNER_URL, api_key="unused")
+            stream = client.chat.completions.create(
+                model=AI_MODEL,
+                messages=[
+                    {"role": "system", "content": AMEEN_SYSTEM},
+                    {"role": "user", "content": message},
+                ],
+                stream=True,
+                max_tokens=1024,
+                timeout=30,
+            )
+            for chunk in stream:
+                delta = chunk.choices[0].delta.content or ""
+                if delta:
+                    yield f"data: {json.dumps({'delta': delta})}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'delta': f'خطأ في الاتصال بنموذج AI: {exc}'})}\n\n"
+            yield "data: [DONE]\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
+
+
+@app.route("/api/scan-dockerfile", methods=["POST"])
+@login_required
+def api_scan_dockerfile():
+    import asyncio
+    import sys
+
+    data = request.get_json(silent=True) or {}
+    url = str(data.get("url", ""))[:1000]
+    if not url:
+        return jsonify({"error": "url required"}), 400
+
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "sentinel-guard"))
+        from app.services.scanner.dockerfile_scanner import DockerfileScanner
+        scanner = DockerfileScanner()
+        result = asyncio.run(scanner.scan(url))
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"error": str(exc), "rule_findings": [], "ai_findings": []}), 500
+
+
 if __name__ == "__main__":
-    host = "0.0.0.0"
-    port = int(os.getenv("DASHBOARD_PORT", "5000"))
-    print("╔══════════════════════════════════════════╗")
-    print("║  👑 AL_HAKIM Dashboard — لوحة التحكم     ║")
-    print(f"║  🌐 http://0.0.0.0:{port}                   ║")
-    print(f"║  🔐 كلمة السر: {DASHBOARD_PASSWORD:<24} ║")
-    print("║  ⚡ الأمين الذكي في خدمتك               ║")
-    print("╚══════════════════════════════════════════╝")
-    app.run(host=host, port=port, debug=False)
+    port = int(os.getenv("DASHBOARD_PORT", 5000))
+    debug = os.getenv("DEBUG", "false").lower() == "true"
+    app.run(host="0.0.0.0", port=port, debug=debug)

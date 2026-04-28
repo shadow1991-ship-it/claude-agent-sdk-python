@@ -38,7 +38,7 @@ async def request_scan(
 
     # Dispatch async task
     from app.workers.scan_tasks import run_scan
-    task = run_scan.delay(str(scan.id), payload.nmap_arguments)
+    task = run_scan.delay(str(scan.id), payload.nmap_arguments, payload.dockerfile_url, payload.image_ref)
     scan.celery_task_id = task.id
     await db.flush()
 

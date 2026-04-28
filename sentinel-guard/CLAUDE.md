@@ -16,6 +16,10 @@ Professional security scanning API. Scans run **only on assets whose ownership h
 | Passive recon | Shodan API |
 | TLS analysis | Python ssl + cryptography |
 | Header scan | httpx |
+| Dockerfile scan | Rule-based + DeepSeek V4 Pro (AI) |
+| SBOM | Syft CLI + AI CVE analysis |
+| AutoFixer | Granite Nano (Granite 4.0) |
+| AI routing | Docker Model Runner (local, free, no API key) |
 | Auth | JWT (HS256) + bcrypt + API keys |
 | Report signing | RSA-2048 / PSS / SHA-256 |
 
@@ -102,16 +106,30 @@ alembic upgrade head
 ## API Flow
 
 ```
-1. POST /api/v1/auth/register        → create user + org
-2. POST /api/v1/auth/login           → get JWT tokens
-3. POST /api/v1/assets               → register asset (domain/IP)
-4. GET  /api/v1/assets/{id}/challenge → get verification instructions
-5. POST /api/v1/assets/{id}/verify   → confirm ownership
-6. POST /api/v1/scans                → queue scan (202 Accepted)
-7. GET  /api/v1/scans/{id}           → poll scan status + findings
-8. POST /api/v1/reports/generate/{scan_id} → generate signed report
-9. GET  /api/v1/reports/{id}/verify  → verify report integrity
+1. POST /api/v1/auth/register              → create user + org
+2. POST /api/v1/auth/login                 → get JWT tokens
+3. POST /api/v1/assets                     → register asset (domain/IP/repository)
+4. GET  /api/v1/assets/{id}/challenge      → get verification instructions
+5. POST /api/v1/assets/{id}/verify         → confirm ownership
+6. POST /api/v1/scans                      → queue scan (202 Accepted)
+   Body: {asset_id, scan_type, dockerfile_url?, image_ref?}
+   scan_type: full | ports | ssl | headers | shodan | dockerfile | sbom
+7. GET  /api/v1/scans/{id}                 → poll scan status + findings
+8. GET  /api/v1/scans/{id}/sarif           → export findings as SARIF 2.1.0
+9. POST /api/v1/scans/{id}/findings/{f}/fix → AI AutoFixer (Granite Nano)
+10. POST /api/v1/reports/generate/{scan_id} → generate signed report
+11. GET  /api/v1/reports/{id}/verify        → verify report integrity
 ```
+
+## AI Models (Docker Model Runner — all local, all free)
+
+| Task | Model | Latency |
+|------|-------|---------|
+| AutoFixer, code gen | `ai/granite-4.0-nano` | < 2s |
+| Dockerfile + SBOM deep analysis | `ai/deepseek-v4-pro` | < 30s |
+| Dashboard chatbot, SSE Q&A | `ai/deepseek-v4-flash` | < 15s |
+
+Pull models: `docker model pull ai/deepseek-v4-flash`
 
 ## Security Architecture
 
