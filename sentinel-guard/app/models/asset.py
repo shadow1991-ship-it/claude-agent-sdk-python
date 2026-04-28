@@ -12,6 +12,7 @@ class AssetType(str, enum.Enum):
     IP = "ip"
     IP_RANGE = "ip_range"
     URL = "url"
+    REPOSITORY = "repository"
 
 
 class VerificationMethod(str, enum.Enum):

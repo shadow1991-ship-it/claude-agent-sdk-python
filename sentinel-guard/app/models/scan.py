@@ -13,6 +13,8 @@ class ScanType(str, enum.Enum):
     SSL = "ssl"
     HEADERS = "headers"
     SHODAN = "shodan"
+    DOCKERFILE = "dockerfile"
+    SBOM = "sbom"
 
 
 class ScanStatus(str, enum.Enum):
@@ -53,6 +55,13 @@ class Scan(Base):
     nmap_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     ssl_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     headers_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    dockerfile_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    sbom_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    ai_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    # Dockerfile / container image target
+    dockerfile_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    image_ref: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     # Aggregated risk score 0-100
     risk_score: Mapped[float | None] = mapped_column(Float, nullable=True)

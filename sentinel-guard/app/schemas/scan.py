@@ -46,6 +46,8 @@ class ScanRequest(BaseModel):
     asset_id: str
     scan_type: ScanType = ScanType.FULL
     nmap_arguments: str = Field(default="-sV -sC --open", max_length=200)
+    dockerfile_url: str | None = Field(default=None, max_length=1000)
+    image_ref: str | None = Field(default=None, max_length=500)
 
     @field_validator("nmap_arguments")
     @classmethod
@@ -65,6 +67,13 @@ class FindingOut(BaseModel):
     remediation: str | None
 
     model_config = {"from_attributes": True}
+
+
+class FixOut(BaseModel):
+    finding_id: str
+    fix_code: str
+    fix_language: str
+    fix_description: str
 
 
 class ScanOut(BaseModel):

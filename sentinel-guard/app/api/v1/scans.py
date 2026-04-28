@@ -1,5 +1,6 @@
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import JSONResponse
 from celery.result import AsyncResult
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -9,9 +10,9 @@ from app.core.database import get_db
 from app.api.deps import get_current_user
 from app.main import limiter
 from app.models.asset import Asset, VerificationStatus
-from app.models.scan import Scan, ScanStatus
+from app.models.scan import Scan, ScanStatus, ScanFinding
 from app.models.user import User
-from app.schemas.scan import ScanRequest, ScanOut, ScanSummary
+from app.schemas.scan import ScanRequest, ScanOut, ScanSummary, FixOut
 
 router = APIRouter(prefix="/scans", tags=["Scans"])
 
@@ -187,3 +188,93 @@ def _count_severities(scan: Scan) -> dict[str, int]:
     for f in scan.findings:
         counts[f.severity.value] = counts.get(f.severity.value, 0) + 1
     return counts
+
+
+@router.get("/{scan_id}/sarif")
+async def export_sarif(
+    scan_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Export scan findings in SARIF 2.1.0 format — compatible with GitHub Code Scanning, VS Code, Azure DevOps."""
+    scan = await _get_scan(scan_id, user, db)
+
+    def _build_rule(f: ScanFinding) -> dict:
+        return {
+            "id": str(f.id),
+            "name": f.title.replace(" ", ""),
+            "shortDescription": {"text": f.title},
+            "fullDescription": {"text": f.description},
+            "defaultConfiguration": {"level": _sarif_level(f.severity.value)},
+            "help": {"text": f.remediation or "No remediation available.", "markdown": f.remediation or ""},
+        }
+
+    def _sarif_level(severity: str) -> str:
+        return {"critical": "error", "high": "error", "medium": "warning", "low": "note", "info": "none"}.get(severity, "none")
+
+    def _finding_to_sarif(f: ScanFinding) -> dict:
+        result = {
+            "ruleId": str(f.id),
+            "level": _sarif_level(f.severity.value),
+            "message": {"text": f.description},
+            "locations": [],
+        }
+        if f.details and f.details.get("line_number"):
+            result["locations"].append({
+                "physicalLocation": {
+                    "artifactLocation": {"uri": "Dockerfile"},
+                    "region": {"startLine": f.details["line_number"]},
+                }
+            })
+        return result
+
+    sarif = {
+        "$schema": "https://schemastore.azurewebsites.net/schemas/json/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [{
+            "tool": {
+                "driver": {
+                    "name": "Sentinel Guard",
+                    "version": settings.APP_VERSION,
+                    "rules": [_build_rule(f) for f in scan.findings],
+                }
+            },
+            "results": [_finding_to_sarif(f) for f in scan.findings],
+        }],
+    }
+    return JSONResponse(content=sarif, media_type="application/json")
+
+
+@router.post("/{scan_id}/findings/{finding_id}/fix", response_model=FixOut)
+async def generate_fix(
+    scan_id: str,
+    finding_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Generate an AI code fix for a specific finding using Granite Nano (local, free)."""
+    scan = await _get_scan(scan_id, user, db)
+
+    finding_obj = next((f for f in scan.findings if str(f.id) == finding_id), None)
+    if not finding_obj:
+        raise HTTPException(status_code=404, detail="Finding not found")
+
+    asset_result = await db.execute(select(Asset).where(Asset.id == scan.asset_id))
+    asset = asset_result.scalar_one_or_none()
+
+    from app.services.scanner.auto_fixer import AutoFixer
+    fixer = AutoFixer()
+    fix = await fixer.generate_fix(
+        finding={
+            "id": str(finding_obj.id),
+            "title": finding_obj.title,
+            "description": finding_obj.description,
+            "severity": finding_obj.severity.value,
+            "remediation": finding_obj.remediation or "",
+        },
+        asset_context={
+            "asset_type": asset.asset_type.value if asset else "unknown",
+            "value": asset.value if asset else "",
+        },
+    )
+    return FixOut(**fix)

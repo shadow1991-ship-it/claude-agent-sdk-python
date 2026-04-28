@@ -50,6 +50,19 @@ class Settings(BaseSettings):
     RATE_ASSETS: str = "30/minute"
     RATE_DEFAULT: str = "60/minute"
 
+    # Docker Model Runner — local AI, no API key required
+    DOCKER_MODEL_RUNNER_URL: str = "http://localhost:12434/engines/llama.cpp/v1"
+    AI_ENABLED: bool = True
+    AI_TIMEOUT: int = 60
+
+    # Task-routed models (all free via Docker Model Runner)
+    AI_MODEL_FAST: str = "ai/granite-4.0-nano"       # AutoFixer, code gen < 2s
+    AI_MODEL_DEEP: str = "ai/deepseek-v4-pro"        # Dockerfile analysis, CVE reasoning
+    AI_MODEL_GENERAL: str = "ai/deepseek-v4-flash"   # Dashboard chatbot, SSE Q&A
+
+    # AWS Lambda serverless mode (optional)
+    LAMBDA_MODE: bool = False
+
     def cors_origins_list(self) -> list[str]:
         if self.CORS_ORIGINS == "*":
             return ["*"]

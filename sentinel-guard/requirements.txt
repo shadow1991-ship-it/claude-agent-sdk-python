@@ -31,5 +31,8 @@ cryptography==43.0.3
 # Rate limiting
 slowapi==0.1.9
 
+# AI — Docker Model Runner (OpenAI-compatible, no API key needed)
+openai>=1.0
+
 # Utils
 python-dotenv==1.0.1
