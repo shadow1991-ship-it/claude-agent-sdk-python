@@ -1,24 +1,112 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "language": "arabic",
+  "effortLevel": "high",
+  "autoMemoryEnabled": true,
+  "includeGitInstructions": true,
+  "respectGitignore": true,
+  "cleanupPeriodDays": 30,
+  "spinnerTipsEnabled": true,
+  "showTurnDuration": true,
   "permissions": {
+    "defaultMode": "auto",
     "allow": [
-      "Bash(python -m ruff check src/ tests/ --fix)",
-      "Bash(python -m ruff format src/ tests/)",
+      "Bash(python -m ruff check * --fix)",
+      "Bash(python -m ruff format *)",
       "Bash(python -m mypy src/)",
-      "Bash(python -m pytest tests/)",
-      "Bash(python -m pytest tests/*)"
+      "Bash(python -m pytest *)",
+      "Bash(python3 *)",
+      "Bash(pip install *)",
+      "Bash(pip3 install *)",
+      "Bash(git status)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git add *)",
+      "Bash(git commit*)",
+      "Bash(git push*)",
+      "Bash(git checkout*)",
+      "Bash(git branch*)",
+      "Bash(git fetch*)",
+      "Bash(git pull*)",
+      "Bash(git rm *)",
+      "Bash(git ls-files*)",
+      "Bash(docker compose *)",
+      "Bash(docker ps*)",
+      "Bash(docker logs*)",
+      "Bash(docker model *)",
+      "Bash(docker exec *)",
+      "Bash(find . *)",
+      "Bash(ls*)",
+      "Bash(cat *)",
+      "Bash(grep *)",
+      "Bash(wc *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(curl *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(chmod *)",
+      "Read",
+      "Write",
+      "Edit"
     ],
-    "deny": []
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(dd *)",
+      "Bash(mkfs *)",
+      "Bash(:(){ :|:& };:)"
+    ]
   },
   "hooks": {
     "PostToolUse": [
       {
+        "matcher": "Edit|Write|MultiEdit",
         "hooks": [
           {
             "type": "command",
-            "command": "python -m ruff check src/ tests/ --fix && python -m ruff format src/ tests/"
+            "command": "python -m ruff check sentinel-guard/ --fix --quiet 2>/dev/null; python -m ruff format sentinel-guard/ --quiet 2>/dev/null; exit 0",
+            "timeout": 15,
+            "async": true,
+            "statusMessage": "تدقيق الكود بـ ruff…"
           }
-        ],
-        "matcher": "Edit|Write|MultiEdit"
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '' && echo '── الحالة ──────────────────────────────' && git status --short && echo '── الفرع ───────────────────────────────' && git branch --show-current && echo '── آخر commit ──────────────────────────' && git log --oneline -1",
+            "timeout": 8,
+            "statusMessage": "عرض حالة الملف…"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '🛡️  Sentinel Guard — جلسة تطوير' && echo 'الفرع  :' $(git branch --show-current) && echo 'ملفات محدثة:' $(git status --short | wc -l) && echo 'آخر تعديل:' $(git log --oneline -1)",
+            "timeout": 8,
+            "statusMessage": "تهيئة بيئة Sentinel Guard…"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '⚡ ضغط السياق — احفظ ملاحظاتك المهمة'",
+            "timeout": 3,
+            "async": true
+          }
+        ]
       }
     ]
   }
