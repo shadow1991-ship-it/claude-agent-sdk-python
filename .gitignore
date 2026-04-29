@@ -3,59 +3,51 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
-.Python
 build/
-develop-eggs/
 dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
+.eggs/
 
 # Virtual environments
 venv/
 ENV/
 env/
-.venv
+.venv/
 uv.lock
 
-# Local env files (live-backend test credentials etc.)
+# Environment & secrets — NEVER commit these
 .env
 .env.*
+*.secret
+*SECRETS*
+*secrets*
+empire/.env
+sentinel-guard/.env
+
+# RSA keys
+sentinel-guard/keys/*.pem
+keys/*.pem
+*.pem
+*.key
 
 # IDEs
 .vscode/
 .idea/
 *.swp
-*.swo
 *~
 **/.DS_Store
 
-# Testing
+# Testing / coverage
 .tox/
 .coverage
-.coverage.*
-.cache
 .pytest_cache/
 htmlcov/
-
-# Type checking
 .mypy_cache/
-.dmypy.json
-dmypy.json
-.pyre/
-.claude/worktrees/
 
-# AL_HAKIM — ملفات سرية محلية فقط
-KEYS_VAULT.md
+# Guardian
 AL_HAKIM.core
 empire.map
+MANIFEST.sig
+
+# Misc
+.claude/worktrees/

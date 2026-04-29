@@ -1,0 +1,63 @@
+name: Sentinel Guard — Dockerfile Security Scan
+
+on:
+  push:
+    paths:
+      - '**/Dockerfile'
+      - '**/Dockerfile.*'
+      - '**/*.dockerfile'
+  pull_request:
+    paths:
+      - '**/Dockerfile'
+
+jobs:
+  dockerfile-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install scanner dependencies
+        run: |
+          pip install httpx openai
+
+      - name: Run Sentinel Dockerfile Scanner (rule-based only — no Docker Model Runner in CI)
+        run: |
+          python - <<'EOF'
+          import asyncio, json, sys, os
+          sys.path.insert(0, 'sentinel-guard')
+          os.environ.setdefault('AI_ENABLED', 'false')
+          from app.services.scanner.dockerfile_scanner import DockerfileScanner
+
+          async def main():
+              scanner = DockerfileScanner()
+              findings = []
+              import glob
+              for df in glob.glob('**/Dockerfile', recursive=True) + glob.glob('**/Dockerfile.*', recursive=True):
+                  result = await scanner.scan(df)
+                  for f in scanner.extract_findings(result):
+                      f['_file'] = df
+                      findings.append(f)
+              print(json.dumps(findings, ensure_ascii=False, indent=2))
+              # Fail CI on critical findings
+              crits = [f for f in findings if f.get('severity') == 'critical']
+              if crits:
+                  print(f'\n❌ {len(crits)} critical finding(s) — blocking merge', file=sys.stderr)
+                  sys.exit(1)
+              print(f'\n✅ {len(findings)} finding(s), none critical')
+
+          asyncio.run(main())
+          EOF
+
+      - name: Export SARIF (if sentinel API running)
+        if: always()
+        run: |
+          echo "SARIF export: run 'GET /api/v1/scans/{id}/sarif' after a full scan to upload to GitHub Code Scanning."

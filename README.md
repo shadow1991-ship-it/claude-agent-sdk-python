@@ -1,359 +1,496 @@
-# Claude Agent SDK for Python
+# Sentinel Guard — دليل التشغيل الكامل
 
-Python SDK for Claude Agent. See the [Claude Agent SDK documentation](https://platform.claude.com/docs/en/agent-sdk/python) for more information.
+نظام فحص أمني احترافي مبني على FastAPI + PostgreSQL + Celery + AI محلي (Docker Model Runner).  
+كل فحص يعمل فقط على أصول موثّقة الملكية — لا يمكن فحص أي موقع بدون إثبات ملكيته.
 
-## Installation
+---
+
+## هيكل المشروع
+
+```
+sentinel-guard/          ← الـ API الأساسي (FastAPI)
+  app/
+    api/v1/              ← endpoints: auth, assets, scans, reports
+    core/                ← config, database, security
+    models/              ← SQLAlchemy: User, Org, Asset, Scan, Report
+    schemas/             ← Pydantic validation
+    services/
+      scanner/           ← 9 scanners: nmap, ssl, headers, shodan, dockerfile, sbom, ai, auto_fixer
+      verification/      ← DNS / HTTP / WHOIS ownership verification
+      reporter/          ← RSA-2048 signed reports
+    workers/             ← Celery background tasks
+  docker-compose.yml
+  requirements.txt
+  .env.example
+
+empire/
+  sentinel_client.py     ← HTTP client للـ API
+  track.sh               ← live terminal dashboard
+  .env.example
+
+web_dashboard.py         ← واجهة الويب (Flask + DeepSeek V4 Flash AI)
+.github/workflows/
+  sentinel-scan.yml      ← CI: فحص Dockerfiles تلقائياً على كل push
+```
+
+---
+
+## المتطلبات
+
+| الأداة | الإصدار الأدنى | التحقق |
+|--------|---------------|--------|
+| Docker Desktop | 4.40+ | `docker --version` |
+| Docker Compose | 2.x | `docker compose version` |
+| Python | 3.11+ | `python3 --version` |
+
+---
+
+## الخطوة 1 — تنزيل المشروع
 
 ```bash
-pip install claude-agent-sdk
+git clone https://github.com/shadow1991-ship-it/claude-agent-sdk-python.git
+cd claude-agent-sdk-python
 ```
 
-**Prerequisites:**
+---
 
-- Python 3.10+
+## الخطوة 2 — إعداد sentinel-guard
 
-**Note:** The Claude Code CLI is automatically bundled with the package - no separate installation required! The SDK will use the bundled CLI by default. If you prefer to use a system-wide installation or a specific version, you can:
-
-- Install Claude Code separately: `curl -fsSL https://claude.ai/install.sh | bash`
-- Specify a custom path: `ClaudeAgentOptions(cli_path="/path/to/claude")`
-
-## Quick Start
-
-```python
-import anyio
-from claude_agent_sdk import query
-
-async def main():
-    async for message in query(prompt="What is 2 + 2?"):
-        print(message)
-
-anyio.run(main)
-```
-
-## Basic Usage: query()
-
-`query()` is an async function for querying Claude Code. It returns an `AsyncIterator` of response messages. See [src/claude_agent_sdk/query.py](src/claude_agent_sdk/query.py).
-
-```python
-from claude_agent_sdk import query, ClaudeAgentOptions, AssistantMessage, TextBlock
-
-# Simple query
-async for message in query(prompt="Hello Claude"):
-    if isinstance(message, AssistantMessage):
-        for block in message.content:
-            if isinstance(block, TextBlock):
-                print(block.text)
-
-# With options
-options = ClaudeAgentOptions(
-    system_prompt="You are a helpful assistant",
-    max_turns=1
-)
-
-async for message in query(prompt="Tell me a joke", options=options):
-    print(message)
-```
-
-### Using Tools
-
-By default, Claude has access to the full [Claude Code toolset](https://code.claude.com/docs/en/settings#tools-available-to-claude) (Read, Write, Edit, Bash, and others). `allowed_tools` is a permission allowlist: listed tools are auto-approved, and unlisted tools fall through to `permission_mode` and `can_use_tool` for a decision. It does not remove tools from Claude's toolset. To block specific tools, use `disallowed_tools`. See the [permissions guide](https://platform.claude.com/docs/en/agent-sdk/permissions) for the full evaluation order.
-
-```python
-options = ClaudeAgentOptions(
-    allowed_tools=["Read", "Write", "Bash"],  # auto-approve these tools
-    permission_mode='acceptEdits'  # auto-accept file edits
-)
-
-async for message in query(
-    prompt="Create a hello.py file",
-    options=options
-):
-    # Process tool use and results
-    pass
-```
-
-### Working Directory
-
-```python
-from pathlib import Path
-
-options = ClaudeAgentOptions(
-    cwd="/path/to/project"  # or Path("/path/to/project")
-)
-```
-
-## ClaudeSDKClient
-
-`ClaudeSDKClient` supports bidirectional, interactive conversations with Claude
-Code. See [src/claude_agent_sdk/client.py](src/claude_agent_sdk/client.py).
-
-Unlike `query()`, `ClaudeSDKClient` additionally enables **custom tools** and **hooks**, both of which can be defined as Python functions.
-
-### Custom Tools (as In-Process SDK MCP Servers)
-
-A **custom tool** is a Python function that you can offer to Claude, for Claude to invoke as needed.
-
-Custom tools are implemented in-process MCP servers that run directly within your Python application, eliminating the need for separate processes that regular MCP servers require.
-
-For an end-to-end example, see [MCP Calculator](examples/mcp_calculator.py).
-
-#### Creating a Simple Tool
-
-```python
-from claude_agent_sdk import tool, create_sdk_mcp_server, ClaudeAgentOptions, ClaudeSDKClient
-
-# Define a tool using the @tool decorator
-@tool("greet", "Greet a user", {"name": str})
-async def greet_user(args):
-    return {
-        "content": [
-            {"type": "text", "text": f"Hello, {args['name']}!"}
-        ]
-    }
-
-# Create an SDK MCP server
-server = create_sdk_mcp_server(
-    name="my-tools",
-    version="1.0.0",
-    tools=[greet_user]
-)
-
-# Use it with Claude. allowed_tools pre-approves the tool so it runs
-# without a permission prompt; it does not control tool availability.
-options = ClaudeAgentOptions(
-    mcp_servers={"tools": server},
-    allowed_tools=["mcp__tools__greet"]
-)
-
-async with ClaudeSDKClient(options=options) as client:
-    await client.query("Greet Alice")
-
-    # Extract and print response
-    async for msg in client.receive_response():
-        print(msg)
-```
-
-#### Benefits Over External MCP Servers
-
-- **No subprocess management** - Runs in the same process as your application
-- **Better performance** - No IPC overhead for tool calls
-- **Simpler deployment** - Single Python process instead of multiple
-- **Easier debugging** - All code runs in the same process
-- **Type safety** - Direct Python function calls with type hints
-
-#### Migration from External Servers
-
-```python
-# BEFORE: External MCP server (separate process)
-options = ClaudeAgentOptions(
-    mcp_servers={
-        "calculator": {
-            "type": "stdio",
-            "command": "python",
-            "args": ["-m", "calculator_server"]
-        }
-    }
-)
-
-# AFTER: SDK MCP server (in-process)
-from my_tools import add, subtract  # Your tool functions
-
-calculator = create_sdk_mcp_server(
-    name="calculator",
-    tools=[add, subtract]
-)
-
-options = ClaudeAgentOptions(
-    mcp_servers={"calculator": calculator}
-)
-```
-
-#### Mixed Server Support
-
-You can use both SDK and external MCP servers together:
-
-```python
-options = ClaudeAgentOptions(
-    mcp_servers={
-        "internal": sdk_server,      # In-process SDK server
-        "external": {                # External subprocess server
-            "type": "stdio",
-            "command": "external-server"
-        }
-    }
-)
-```
-
-### Hooks
-
-A **hook** is a Python function that the Claude Code _application_ (_not_ Claude) invokes at specific points of the Claude agent loop. Hooks can provide deterministic processing and automated feedback for Claude. Read more in [Intercept and control agent behavior with hooks](https://platform.claude.com/docs/en/agent-sdk/hooks).
-
-For more examples, see examples/hooks.py.
-
-#### Example
-
-```python
-from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKClient, HookMatcher
-
-async def check_bash_command(input_data, tool_use_id, context):
-    tool_name = input_data["tool_name"]
-    tool_input = input_data["tool_input"]
-    if tool_name != "Bash":
-        return {}
-    command = tool_input.get("command", "")
-    block_patterns = ["foo.sh"]
-    for pattern in block_patterns:
-        if pattern in command:
-            return {
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": "deny",
-                    "permissionDecisionReason": f"Command contains invalid pattern: {pattern}",
-                }
-            }
-    return {}
-
-options = ClaudeAgentOptions(
-    allowed_tools=["Bash"],
-    hooks={
-        "PreToolUse": [
-            HookMatcher(matcher="Bash", hooks=[check_bash_command]),
-        ],
-    }
-)
-
-async with ClaudeSDKClient(options=options) as client:
-    # Test 1: Command with forbidden pattern (will be blocked)
-    await client.query("Run the bash command: ./foo.sh --help")
-    async for msg in client.receive_response():
-        print(msg)
-
-    print("\n" + "=" * 50 + "\n")
-
-    # Test 2: Safe command that should work
-    await client.query("Run the bash command: echo 'Hello from hooks example!'")
-    async for msg in client.receive_response():
-        print(msg)
-```
-
-## Types
-
-See [src/claude_agent_sdk/types.py](src/claude_agent_sdk/types.py) for complete type definitions:
-
-- `ClaudeAgentOptions` - Configuration options
-- `AssistantMessage`, `UserMessage`, `SystemMessage`, `ResultMessage` - Message types
-- `TextBlock`, `ToolUseBlock`, `ToolResultBlock` - Content blocks
-
-## Error Handling
-
-```python
-from claude_agent_sdk import (
-    ClaudeSDKError,      # Base error
-    CLINotFoundError,    # Claude Code not installed
-    CLIConnectionError,  # Connection issues
-    ProcessError,        # Process failed
-    CLIJSONDecodeError,  # JSON parsing issues
-)
-
-try:
-    async for message in query(prompt="Hello"):
-        pass
-except CLINotFoundError:
-    print("Please install Claude Code")
-except ProcessError as e:
-    print(f"Process failed with exit code: {e.exit_code}")
-except CLIJSONDecodeError as e:
-    print(f"Failed to parse response: {e}")
-```
-
-See [src/claude_agent_sdk/\_errors.py](src/claude_agent_sdk/_errors.py) for all error types.
-
-## Available Tools
-
-See the [Claude Code documentation](https://code.claude.com/docs/en/settings#tools-available-to-claude) for a complete list of available tools.
-
-## Examples
-
-See [examples/quick_start.py](examples/quick_start.py) for a complete working example.
-
-See [examples/streaming_mode.py](examples/streaming_mode.py) for comprehensive examples involving `ClaudeSDKClient`. You can even run interactive examples in IPython from [examples/streaming_mode_ipython.py](examples/streaming_mode_ipython.py).
-
-## Migrating from Claude Code SDK
-
-If you're upgrading from the Claude Code SDK (versions < 0.1.0), please see the [CHANGELOG.md](CHANGELOG.md#010) for details on breaking changes and new features, including:
-
-- `ClaudeCodeOptions` → `ClaudeAgentOptions` rename
-- Merged system prompt configuration
-- Settings isolation and explicit control
-- New programmatic subagents and session forking features
-
-## Development
-
-If you're contributing to this project, run the initial setup script to install git hooks:
+### 2.1 نسخ ملف البيئة
 
 ```bash
-./scripts/initial-setup.sh
+cd sentinel-guard
+cp .env.example .env
 ```
 
-This installs a pre-push hook that runs lint checks before pushing, matching the CI workflow. To skip the hook temporarily, use `git push --no-verify`.
-
-### Building Wheels Locally
-
-To build wheels with the bundled Claude Code CLI:
+### 2.2 توليد SECRET_KEY
 
 ```bash
-# Install build dependencies
-pip install build twine
-
-# Build wheel with bundled CLI
-python scripts/build_wheel.py
-
-# Build with specific version
-python scripts/build_wheel.py --version 0.1.4
-
-# Build with specific CLI version
-python scripts/build_wheel.py --cli-version 2.0.0
-
-# Clean bundled CLI after building
-python scripts/build_wheel.py --clean
-
-# Skip CLI download (use existing)
-python scripts/build_wheel.py --skip-download
+python3 -c "import secrets; print(secrets.token_urlsafe(64))"
 ```
 
-The build script:
+افتح `.env` وضع الناتج في `SECRET_KEY`:
 
-1. Downloads Claude Code CLI for your platform
-2. Bundles it in the wheel
-3. Builds both wheel and source distribution
-4. Checks the package with twine
+```env
+SECRET_KEY=الناتج_هنا
+SHODAN_API_KEY=your_key_here    # اختياري — من shodan.io مجاناً
+DEBUG=false
+```
 
-See `python scripts/build_wheel.py --help` for all options.
+> لا تعدّل `DATABASE_URL` أو `REDIS_URL` — القيم الافتراضية تعمل مع docker-compose.
 
-### Release Workflow
+---
 
-The package is published to PyPI via the GitHub Actions workflow in `.github/workflows/publish.yml`. To create a new release:
+## الخطوة 3 — تشغيل الـ Backend
 
-1. **Trigger the workflow** manually from the Actions tab with two inputs:
-   - `version`: The package version to publish (e.g., `0.1.5`)
-   - `claude_code_version`: The Claude Code CLI version to bundle (e.g., `2.0.0` or `latest`)
+```bash
+# داخل sentinel-guard/
+docker compose up --build -d
+```
 
-2. **The workflow will**:
-   - Build platform-specific wheels for macOS, Linux, and Windows
-   - Bundle the specified Claude Code CLI version in each wheel
-   - Build a source distribution
-   - Publish all artifacts to PyPI
-   - Create a release branch with version updates
-   - Open a PR to main with:
-     - Updated `pyproject.toml` version
-     - Updated `src/claude_agent_sdk/_version.py`
-     - Updated `src/claude_agent_sdk/_cli_version.py` with bundled CLI version
-     - Auto-generated `CHANGELOG.md` entry
+**ما الذي يبدأ:**
 
-3. **Review and merge** the release PR to update main with the new version information
+| الخدمة | الدور |
+|--------|-------|
+| `db` | PostgreSQL 16 — يحفظ المستخدمين، الأصول، الفحوصات، النتائج |
+| `redis` | Message broker بين الـ API والـ worker |
+| `api` | FastAPI على المنفذ 8000 — يستقبل الطلبات |
+| `worker` | Celery — يشغّل الفحوصات في الخلفية |
 
-The workflow tracks both the package version and the bundled CLI version separately, allowing you to release a new package version with an updated CLI without code changes.
+### تحقق من الحالة
 
-## License and terms
+```bash
+docker compose ps
+```
 
-Use of this SDK is governed by Anthropic's [Commercial Terms of Service](https://www.anthropic.com/legal/commercial-terms), including when you use it to power products and services that you make available to your own customers and end users, except to the extent a specific component or dependency is covered by a different license as indicated in that component's LICENSE file.
+المتوقع:
+```
+NAME                    STATUS
+sentinel-guard-api-1    Up
+sentinel-guard-worker-1 Up
+sentinel-guard-db-1     Up (healthy)
+sentinel-guard-redis-1  Up (healthy)
+```
+
+إذا كان container بحالة `Exit`:
+```bash
+docker compose logs api --tail=40
+docker compose logs worker --tail=40
+```
+
+---
+
+## الخطوة 4 — تهيئة قاعدة البيانات
+
+```bash
+docker compose exec api alembic upgrade head
+```
+
+ينشئ الجداول: `users`, `organizations`, `assets`, `scans`, `scan_findings`, `reports`.
+
+> يُنفَّذ مرة واحدة فقط عند أول تشغيل، أو بعد أي تعديل على الـ models.
+
+---
+
+## الخطوة 5 — التحقق من الـ API
+
+```bash
+curl http://localhost:8000/health
+# {"status":"ok","version":"1.0.0"}
+```
+
+Swagger UI:
+```
+http://localhost:8000/docs
+```
+
+---
+
+## الخطوة 6 — إعداد نماذج AI (Docker Model Runner)
+
+### 6.1 تحقق أن Model Runner يعمل
+
+```bash
+docker model ls
+```
+
+إذا ظهر خطأ `unknown command`:
+- Mac/Windows: تأكد أن Docker Desktop 4.40+ شغّال
+- فعّله من: Settings → Features in development → Enable Docker Model Runner
+
+### 6.2 حمّل النماذج
+
+```bash
+# للـ chatbot والـ dashboard (~8GB) — أساسي
+docker model pull ai/deepseek-v4-flash
+
+# للتحليل الأمني العميق (~15GB) — اختياري
+docker model pull ai/deepseek-v4-pro
+
+# للـ AutoFixer وتوليد الكود (~2GB) — سريع جداً
+docker model pull ai/granite-4.0-nano
+```
+
+### 6.3 أضف متغيرات AI إلى `sentinel-guard/.env`
+
+```env
+DOCKER_MODEL_RUNNER_URL=http://localhost:12434/engines/llama.cpp/v1
+AI_ENABLED=true
+AI_MODEL_FAST=ai/granite-4.0-nano
+AI_MODEL_DEEP=ai/deepseek-v4-pro
+AI_MODEL_GENERAL=ai/deepseek-v4-flash
+AI_TIMEOUT=60
+```
+
+أعد تشغيل الـ containers:
+```bash
+docker compose down && docker compose up -d
+```
+
+---
+
+## الخطوة 7 — إعداد Web Dashboard
+
+```bash
+cd ../empire
+cp .env.example .env
+```
+
+عدّل `empire/.env`:
+```env
+SENTINEL_API_URL=http://localhost:8000/api/v1
+DASHBOARD_SECRET=<python3 -c "import secrets; print(secrets.token_urlsafe(48))">
+DASHBOARD_PASSWORD=كلمة_سرك_هنا
+DASHBOARD_PORT=5000
+DOCKER_MODEL_RUNNER_URL=http://localhost:12434/engines/llama.cpp/v1
+AI_MODEL_GENERAL=ai/deepseek-v4-flash
+```
+
+```bash
+cd ..
+pip install flask openai
+python web_dashboard.py
+```
+
+افتح: `http://localhost:5000`
+
+---
+
+## الخطوة 8 — أول استخدام
+
+### إنشاء حساب
+
+```bash
+curl -s -X POST http://localhost:8000/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "admin@yourorg.com",
+    "password": "StrongPass123!",
+    "organization_name": "My Org"
+  }' | python3 -m json.tool
+```
+
+### تسجيل الدخول
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@yourorg.com","password":"StrongPass123!"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+echo "Token: $TOKEN"
+```
+
+### إضافة أصل
+
+```bash
+ASSET_ID=$(curl -s -X POST http://localhost:8000/api/v1/assets \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "value": "example.com",
+    "asset_type": "domain",
+    "verification_method": "dns_txt"
+  }' | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+
+echo "Asset ID: $ASSET_ID"
+```
+
+### التحقق من الملكية
+
+```bash
+# احصل على تعليمات التحقق
+curl -s http://localhost:8000/api/v1/assets/$ASSET_ID/challenge \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+
+# أضف الـ TXT record في DNS حسب التعليمات
+# انتظر 5-60 دقيقة للانتشار، ثم:
+
+curl -s -X POST http://localhost:8000/api/v1/assets/$ASSET_ID/verify \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+```
+
+> **لماذا التحقق ضروري؟** النظام يرفض فحص أي أصل لم تُثبت ملكيته — حماية من استخدامه لمهاجمة مواقع الآخرين.
+
+---
+
+## الخطوة 9 — تشغيل الفحوصات
+
+### فحص كامل
+
+```bash
+SCAN_ID=$(curl -s -X POST http://localhost:8000/api/v1/scans \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"asset_id\":\"$ASSET_ID\",\"scan_type\":\"full\"}" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+
+echo "Scan ID: $SCAN_ID"
+```
+
+### فحص Dockerfile
+
+```bash
+curl -s -X POST http://localhost:8000/api/v1/scans \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"asset_id\":\"$ASSET_ID\",
+    \"scan_type\":\"dockerfile\",
+    \"dockerfile_url\":\"https://raw.githubusercontent.com/your/repo/main/Dockerfile\"
+  }" | python3 -m json.tool
+```
+
+### متابعة حالة الفحص
+
+```bash
+curl -s http://localhost:8000/api/v1/scans/$SCAN_ID \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+```
+
+انتظر حتى يصبح `"status": "completed"`.
+
+### أنواع الفحص المتاحة
+
+| النوع | ما يفحصه | الوقت التقريبي |
+|-------|---------|---------------|
+| `full` | كل شيء: ports + ssl + headers + shodan + AI | 2-5 دقائق |
+| `ports` | Nmap — المنافذ المفتوحة والخدمات | 1-3 دقائق |
+| `ssl` | شهادة TLS: صلاحية، ciphers، protocols | 30 ثانية |
+| `headers` | HTTP security headers المفقودة | 10 ثوانٍ |
+| `shodan` | بيانات Shodan السلبية | 10 ثوانٍ |
+| `dockerfile` | ثغرات Dockerfile: rule-based + DeepSeek AI | 30-60 ثانية |
+| `sbom` | Software Bill of Materials + CVE analysis | 1-2 دقيقة |
+
+---
+
+## الخطوة 10 — إصلاح تلقائي بالـ AI
+
+```bash
+# استخرج finding_id من نتيجة الفحص أولاً
+curl -s http://localhost:8000/api/v1/scans/$SCAN_ID \
+  -H "Authorization: Bearer $TOKEN" \
+  | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+for f in d.get('findings',[]):
+    print(f['id'], '-', f['severity'], '-', f['title'])
+"
+
+# ثم شغّل AutoFixer على finding محدد
+curl -s -X POST \
+  http://localhost:8000/api/v1/scans/$SCAN_ID/findings/$FINDING_ID/fix \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+```
+
+الرد:
+```json
+{
+  "fix_code": "FROM ubuntu:22.04@sha256:abc123...",
+  "fix_language": "dockerfile",
+  "fix_description": "Pin image to digest to prevent supply chain attacks"
+}
+```
+
+---
+
+## الخطوة 11 — تصدير SARIF (GitHub Code Scanning)
+
+```bash
+curl -s http://localhost:8000/api/v1/scans/$SCAN_ID/sarif \
+  -H "Authorization: Bearer $TOKEN" \
+  -o results.sarif
+
+# ارفعه على GitHub
+gh api repos/OWNER/REPO/code-scanning/sarifs \
+  --field commit_sha=$(git rev-parse HEAD) \
+  --field ref=refs/heads/main \
+  --field sarif=@results.sarif
+```
+
+---
+
+## الخطوة 12 — تقارير موقّعة
+
+```bash
+# توليد تقرير
+REPORT_ID=$(curl -s -X POST \
+  http://localhost:8000/api/v1/reports/generate/$SCAN_ID \
+  -H "Authorization: Bearer $TOKEN" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+
+# التحقق من التوقيع
+curl -s http://localhost:8000/api/v1/reports/$REPORT_ID/verify \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+```
+
+التقارير موقّعة بـ RSA-2048/PSS — يمكن التحقق منها offline في أي وقت.
+
+---
+
+## الخطوة 13 — Live Terminal Tracker
+
+```bash
+cd empire
+chmod +x track.sh
+./track.sh http://localhost:8000/api/v1 $TOKEN
+```
+
+```
+  🛡️  Sentinel Guard Tracker  —  14:32:07
+  ─────────────────────────────────────────
+  Total Scans:       12
+  Running:           1
+  Critical:          3
+  Avg Risk:          42.5 / 100
+  Risk: ████████░░░░░░░░░░░░ 42.5/100
+```
+
+---
+
+## الإنتاج (Production Checklist)
+
+### ✅ قبل النشر
+
+```bash
+# 1. تأكد أن .env ليس في git
+git status | grep '\.env'
+# يجب أن لا يظهر شيء
+
+# 2. SECRET_KEY قوي (80+ حرف)
+python3 -c "import secrets; print(len(secrets.token_urlsafe(64)))"
+
+# 3. DEBUG=false
+grep DEBUG sentinel-guard/.env
+
+# 4. CORS محدود لدومينك فقط
+# CORS_ORIGINS=https://yourdomain.com
+# ALLOWED_HOSTS=yourdomain.com
+```
+
+### Nginx Reverse Proxy
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name api.yourdomain.com;
+
+    ssl_certificate /etc/letsencrypt/live/api.yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/api.yourdomain.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 300;
+    }
+}
+```
+
+---
+
+## جدول الخدمات
+
+| الخدمة | الرابط | الوصف |
+|--------|--------|-------|
+| API Swagger | `localhost:8000/docs` | اختبار جميع الـ endpoints |
+| Web Dashboard | `localhost:5000` | واجهة بصرية + AI chatbot |
+| Docker Model Runner | `localhost:12434` | نماذج AI محلية |
+| PostgreSQL | `localhost:5432` | قاعدة البيانات |
+| Redis | `localhost:6379` | message broker |
+
+---
+
+## حل المشاكل الشائعة
+
+| المشكلة | السبب | الحل |
+|---------|-------|------|
+| API لا يبدأ | `SECRET_KEY` فارغ | أضف مفتاح عشوائي في `.env` |
+| DB لا تتصل | المنفذ 5432 مستخدم | غيّر port في docker-compose.yml |
+| AI لا يستجيب | Model Runner لا يعمل | تحقق من Docker Desktop settings |
+| الفحص يبقى `queued` | Redis غير متصل | `docker compose restart redis worker` |
+| `alembic: not found` | تنفيذ خارج الـ container | استخدم `docker compose exec api alembic ...` |
+
+```bash
+# لوغات مباشرة
+docker compose logs api -f
+docker compose logs worker -f
+
+# إعادة تشغيل كاملة
+docker compose down && docker compose up -d
+docker compose exec api alembic upgrade head
+```
+
+---
+
+## نماذج AI (Docker Model Runner — كلها محلية ومجانية)
+
+| النموذج | الحجم | الاستخدام |
+|---------|-------|----------|
+| `ai/deepseek-v4-flash` | ~8GB | Dashboard chatbot، SSE streaming |
+| `ai/deepseek-v4-pro` | ~15GB | تحليل Dockerfile عميق، CVE reasoning |
+| `ai/granite-4.0-nano` | ~2GB | AutoFixer، code generation سريع |
+
+لا إنترنت، لا API key، لا تكلفة — كل شيء يعمل على جهازك.
