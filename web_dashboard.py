@@ -23,8 +23,16 @@ DASHBOARD_PASSWORD_HASH = hashlib.sha256(
 ).hexdigest()
 
 SENTINEL_API = os.getenv("SENTINEL_API_URL", "http://localhost:8000/api/v1")
-MODEL_RUNNER_URL = os.getenv("DOCKER_MODEL_RUNNER_URL", "http://localhost:12434/engines/llama.cpp/v1")
-AI_MODEL = os.getenv("AI_MODEL_GENERAL", "ai/deepseek-v4-flash")
+
+# دعم Ollama + Docker Model Runner معاً — يختار الأول المتاح
+MODEL_RUNNER_URL = os.getenv(
+    "OLLAMA_URL",
+    os.getenv("DOCKER_MODEL_RUNNER_URL", "http://localhost:12434/engines/llama.cpp/v1")
+)
+AI_MODEL = os.getenv(
+    "OLLAMA_MODEL",
+    os.getenv("AI_MODEL_GENERAL", "ai/deepseek-v4-flash")
+)
 
 def _load_knowledge() -> str:
     """يقرأ قاعدة معرفة أدوات الأمن ويدمجها في system prompt الذكاء."""
@@ -43,11 +51,20 @@ def _load_knowledge() -> str:
 _KNOWLEDGE = _load_knowledge()
 
 AMEEN_SYSTEM = (
-    "أنت الأمين — مساعد أمني ذكي لنظام Sentinel Guard. "
-    "تتخصص في أمن المعلومات، تحليل الثغرات، Docker security، وتفسير نتائج الفحص. "
-    "تتحدث العربية بشكل افتراضي وتجيب بإيجاز ودقة. "
-    "إذا سأل المستخدم عن نتيجة فحص، اشرحها بوضوح مع أولويات الإصلاح. "
-    "لديك قاعدة معرفة كاملة بأدوات الأمن — استخدمها للإجابة بدقة.\n\n"
+    "أنت الأمين — مساعد أمني ذكي لنظام Sentinel Guard.\n"
+    "تتخصص في أمن المعلومات، تحليل الثغرات، Docker security، وتفسير نتائج الفحص.\n"
+    "تتحدث العربية بشكل افتراضي وتجيب بإيجاز ودقة.\n\n"
+    "=== قواعد السيادة (لا استثناء) ===\n"
+    "- ممنوع --privileged في أي Docker container\n"
+    "- ممنوع --net=host في أي Docker container\n"
+    "- ممنوع الدخول لأنظمة غير مملوكة للمستخدم\n"
+    "- لا تُنفّذ أي أداة أو أمر إلا بطلب صريح من المستخدم\n"
+    "- جميع الأدوات للاستخدام على الأصول المملوكة فقط\n\n"
+    "=== دورك ===\n"
+    "- إذا سأل المستخدم عن نتيجة فحص → اشرحها مع أولويات الإصلاح\n"
+    "- إذا طلب شرح أداة → اشرحها من قاعدة معرفتك\n"
+    "- إذا طلب تنفيذ أمر → اعطه الأمر الصحيح فقط، لا تُنفّذه أنت\n"
+    "- إذا كان الطلب يتعلق بأنظمة الغير → ارفض بوضوح\n\n"
     "=== قاعدة المعرفة ===\n\n"
     + _KNOWLEDGE
 )
