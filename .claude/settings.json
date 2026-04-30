@@ -54,8 +54,7 @@
     "deny": [
       "Bash(rm -rf /)",
       "Bash(dd *)",
-      "Bash(mkfs *)",
-      "Bash(:(){ :|:& };:)"
+      "Bash(mkfs *)"
     ]
   },
   "hooks": {
@@ -68,7 +67,19 @@
             "command": "python -m ruff check sentinel-guard/ --fix --quiet 2>/dev/null; python -m ruff format sentinel-guard/ --quiet 2>/dev/null; exit 0",
             "timeout": 15,
             "async": true,
-            "statusMessage": "تدقيق الكود بـ ruff…"
+            "statusMessage": "تدقيق الكود…"
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '⚠️  فشل تنفيذ الأمر — راجع الصلاحيات أو الإعدادات'",
+            "timeout": 3,
+            "async": true
           }
         ]
       }
@@ -80,7 +91,7 @@
             "type": "command",
             "command": "echo '' && echo '── الحالة ──────────────────────────────' && git status --short && echo '── الفرع ───────────────────────────────' && git branch --show-current && echo '── آخر commit ──────────────────────────' && git log --oneline -1",
             "timeout": 8,
-            "statusMessage": "عرض حالة الملف…"
+            "statusMessage": "عرض حالة المستودع…"
           }
         ]
       }
@@ -93,6 +104,19 @@
             "command": "echo '🛡️  Sentinel Guard — جلسة تطوير' && echo 'الفرع  :' $(git branch --show-current) && echo 'ملفات محدثة:' $(git status --short | wc -l) && echo 'آخر تعديل:' $(git log --oneline -1)",
             "timeout": 8,
             "statusMessage": "تهيئة بيئة Sentinel Guard…"
+          }
+        ]
+      }
+    ],
+    "FileChanged": [
+      {
+        "matcher": "sentinel-guard/app/**/*.py",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '📁 تغيّر:' $FILE_PATH",
+            "timeout": 3,
+            "async": true
           }
         ]
       }
