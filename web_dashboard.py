@@ -26,11 +26,30 @@ SENTINEL_API = os.getenv("SENTINEL_API_URL", "http://localhost:8000/api/v1")
 MODEL_RUNNER_URL = os.getenv("DOCKER_MODEL_RUNNER_URL", "http://localhost:12434/engines/llama.cpp/v1")
 AI_MODEL = os.getenv("AI_MODEL_GENERAL", "ai/deepseek-v4-flash")
 
+def _load_knowledge() -> str:
+    """يقرأ قاعدة معرفة أدوات الأمن ويدمجها في system prompt الذكاء."""
+    import glob
+    base = os.path.join(os.path.dirname(__file__), "knowledge", "kali-tools")
+    parts = []
+    for path in sorted(glob.glob(os.path.join(base, "*.md"))):
+        try:
+            with open(path, encoding="utf-8") as f:
+                parts.append(f.read())
+        except Exception:
+            pass
+    return "\n\n---\n\n".join(parts)
+
+
+_KNOWLEDGE = _load_knowledge()
+
 AMEEN_SYSTEM = (
     "أنت الأمين — مساعد أمني ذكي لنظام Sentinel Guard. "
     "تتخصص في أمن المعلومات، تحليل الثغرات، Docker security، وتفسير نتائج الفحص. "
     "تتحدث العربية بشكل افتراضي وتجيب بإيجاز ودقة. "
-    "إذا سأل المستخدم عن نتيجة فحص، اشرحها بوضوح مع أولويات الإصلاح."
+    "إذا سأل المستخدم عن نتيجة فحص، اشرحها بوضوح مع أولويات الإصلاح. "
+    "لديك قاعدة معرفة كاملة بأدوات الأمن — استخدمها للإجابة بدقة.\n\n"
+    "=== قاعدة المعرفة ===\n\n"
+    + _KNOWLEDGE
 )
 
 # ─── Auth ─────────────────────────────────────────────────────────────────────
