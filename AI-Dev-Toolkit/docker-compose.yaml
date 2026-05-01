@@ -1,0 +1,53 @@
+# AI-Dev-Toolkit — Multi-Model Local AI Stack
+# تشغيل: docker compose up -d
+# يُشغّل Docker Model Runner مع ثلاثة نماذج مجانية محلياً
+
+services:
+  model-runner:
+    image: ai/model-runner:latest
+    ports:
+      - "12434:12434"
+    volumes:
+      - model-cache:/models
+    environment:
+      - MODELS=ai/granite-4.0-nano,ai/kimi-k2,ai/deepseek-v4-flash
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:12434/engines/llama.cpp/v1/models"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  sentinel-guard:
+    build:
+      context: ../sentinel-guard
+    ports:
+      - "8000:8000"
+    environment:
+      - DOCKER_MODEL_RUNNER_URL=http://model-runner:12434/engines/llama.cpp/v1
+      - AI_MODEL_FAST=ai/granite-4.0-nano
+      - AI_MODEL_DEEP=ai/kimi-k2
+      - AI_MODEL_GENERAL=ai/deepseek-v4-flash
+      - AI_ENABLED=true
+    depends_on:
+      model-runner:
+        condition: service_healthy
+
+  web-dashboard:
+    build:
+      context: ../empire
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      - DOCKER_MODEL_RUNNER_URL=http://model-runner:12434/engines/llama.cpp/v1
+      - AI_MODEL_GENERAL=ai/deepseek-v4-flash
+      - SENTINEL_API_URL=http://sentinel-guard:8000/api/v1
+    depends_on:
+      - sentinel-guard
+      - model-runner
+
+volumes:
+  model-cache:
+    driver: local
