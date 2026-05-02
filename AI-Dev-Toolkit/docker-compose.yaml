@@ -10,7 +10,7 @@ services:
     volumes:
       - model-cache:/models
     environment:
-      - MODELS=ai/granite-4.0-nano,ai/kimi-k2,ai/deepseek-v4-flash
+      - MODELS=ai/granite-4.0-nano,ai/kimi-k2,ai/deepseek-v4-flash,ai/deepseek-v4-pro,ai/mimo-v2.5-pro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:12434/engines/llama.cpp/v1/models"]
       interval: 30s
@@ -27,7 +27,8 @@ services:
     environment:
       - DOCKER_MODEL_RUNNER_URL=http://model-runner:12434/engines/llama.cpp/v1
       - AI_MODEL_FAST=ai/granite-4.0-nano
-      - AI_MODEL_DEEP=ai/kimi-k2
+      - AI_MODEL_DEEP=ai/deepseek-v4-pro
+      - AI_MODEL_REASON=ai/mimo-v2.5-pro
       - AI_MODEL_GENERAL=ai/deepseek-v4-flash
       - AI_ENABLED=true
     depends_on:

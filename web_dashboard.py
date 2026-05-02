@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
 Sentinel Guard — Tactical Cybersecurity Dashboard
-Kali Linux 2026 × Nmap Hacker's Radar
-AI سلسلة: Gemini (إذا GEMINI_API_KEY موجود) → Docker Model Runner → Ollama
+Kali Linux 2026 × Nmap Hacker's Radar × DeepSeek-V4 AI Core
+AI سلسلة: Gemini → Docker Model Runner (DeepSeek V4 / MiMo / Granite) → Ollama
 pip install flask openai google-genai
 """
-import os, json, hmac, hashlib, time, glob
+import os, json, hmac, hashlib, time, glob, re
 from functools import wraps
 from flask import (
     Flask, render_template_string, request, redirect, url_for,
@@ -35,7 +35,27 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
 MODEL_URL    = os.getenv("OLLAMA_URL", os.getenv(
     "DOCKER_MODEL_RUNNER_URL", "http://localhost:12434/engines/llama.cpp/v1"
 ))
-AI_MODEL = os.getenv("OLLAMA_MODEL", os.getenv("AI_MODEL_GENERAL", "ai/deepseek-v4-flash"))
+AI_MODEL         = os.getenv("OLLAMA_MODEL", os.getenv("AI_MODEL_GENERAL", "ai/deepseek-v4-flash"))
+AI_MODEL_FAST    = os.getenv("AI_MODEL_FAST",    "ai/granite-4.0-nano")
+AI_MODEL_DEEP    = os.getenv("AI_MODEL_DEEP",    "ai/deepseek-v4-pro")
+AI_MODEL_REASON  = os.getenv("AI_MODEL_REASON",  "ai/mimo-v2.5-pro")
+AI_MODEL_FALLBACK= os.getenv("AI_MODEL_FALLBACK","ai/deepseek-v3-0324")
+
+# خريطة model IDs المدعومة (label → model_id)
+AVAILABLE_MODELS = {
+    "deepseek-v4-flash": AI_MODEL,
+    "deepseek-v4-pro":   AI_MODEL_DEEP,
+    "granite-nano":      AI_MODEL_FAST,
+    "mimo-pro":          AI_MODEL_REASON,
+    "deepseek-v3":       AI_MODEL_FALLBACK,
+}
+
+# Thinking mode — suffix يُضاف للـ system prompt عند Think Max
+_THINK_MAX_SUFFIX = (
+    "\n\n=== Think Max Mode ===\n"
+    "فكّر بعمق وتأنّ في الإجابة. استخدم قدراتك الاستدلالية الكاملة. "
+    "حلّل المشكلة من جوانب متعددة قبل الإجابة النهائية."
+)
 
 # ── Knowledge base ───────────────────────────────────────────────────────────
 def _load_knowledge() -> str:
@@ -74,9 +94,30 @@ def _active_backend() -> str:
     host = MODEL_URL.split("//")[-1].split("/")[0]
     return f"Local · {AI_MODEL.split('/')[-1]} @ {host}"
 
-def _ai_stream(message: str, history: list | None = None):
-    """يُرسل رسالة للذكاء ويُعيد stream. Gemini أولاً، ثم النموذج المحلي."""
-    # 1. Gemini (google-genai SDK — الطريقة الصحيحة 2025)
+def _resolve_model(model_key: str | None) -> str:
+    """يُحوّل مفتاح النموذج إلى model_id الفعلي."""
+    if not model_key:
+        return AI_MODEL
+    return AVAILABLE_MODELS.get(model_key, AI_MODEL)
+
+def _build_system(thinking_mode: str) -> str:
+    """يبني الـ system prompt مع التعديل المناسب لوضع التفكير."""
+    sys = AMEEN_SYSTEM
+    if thinking_mode == "think-max":
+        sys += _THINK_MAX_SUFFIX
+    return sys
+
+def _ai_stream(message: str, history: list | None = None,
+               thinking_mode: str = "non-think", model_key: str | None = None):
+    """يُرسل رسالة للذكاء ويُعيد SSE stream.
+    thinking_mode: 'non-think' | 'think-high' | 'think-max'
+    model_key: مفتاح من AVAILABLE_MODELS أو None للـ default
+    """
+    active_model = _resolve_model(model_key)
+    system_content = _build_system(thinking_mode)
+    max_tok = 3000 if thinking_mode in ("think-high", "think-max") else 1500
+
+    # 1. Gemini (google-genai SDK)
     if GEMINI_KEY:
         try:
             from google import genai
@@ -96,8 +137,8 @@ def _ai_stream(message: str, history: list | None = None):
                 model=GEMINI_MODEL,
                 contents=msgs,
                 config=types.GenerateContentConfig(
-                    system_instruction=AMEEN_SYSTEM,
-                    max_output_tokens=1500,
+                    system_instruction=system_content,
+                    max_output_tokens=max_tok,
                 ),
             )
             for chunk in stream:
@@ -112,21 +153,23 @@ def _ai_stream(message: str, history: list | None = None):
     try:
         from openai import OpenAI
         client = OpenAI(base_url=MODEL_URL, api_key="unused")
-        msgs_openai = [{"role": "system", "content": AMEEN_SYSTEM}]
+        msgs_openai = [{"role": "system", "content": system_content}]
         for h in (history or []):
             msgs_openai.append({"role": h["role"], "content": h["content"]})
         msgs_openai.append({"role": "user", "content": message})
         stream = client.chat.completions.create(
-            model=AI_MODEL,
+            model=active_model,
             messages=msgs_openai,
             stream=True,
-            max_tokens=1200,
-            timeout=40,
+            max_tokens=max_tok,
+            temperature=1.0,
+            top_p=1.0,
+            timeout=60 if thinking_mode in ("think-high", "think-max") else 40,
         )
         for chunk in stream:
             delta = chunk.choices[0].delta.content or ""
             if delta:
-                yield f"data: {json.dumps({'delta': delta, 'backend': 'local'})}\n\n"
+                yield f"data: {json.dumps({'delta': delta, 'backend': active_model})}\n\n"
         yield "data: [DONE]\n\n"
     except Exception as exc:
         yield f"data: {json.dumps({'delta': f'⚠ خطأ: {exc}'})}\n\n"
@@ -322,6 +365,32 @@ body::after{content:'';position:fixed;inset:0;z-index:1;pointer-events:none;
   96%{text-shadow:2px 2px var(--cy),-2px -2px var(--r)}
   97%,100%{text-shadow:var(--glow)}
 }
+/* ── Thinking Mode Controls ── */
+.think-bar{display:flex;align-items:center;gap:5px;padding:5px 10px;
+  border-bottom:1px solid var(--b);flex-shrink:0;background:rgba(0,3,0,.6);}
+.think-lbl{font-family:var(--mono);font-size:7px;color:var(--td);letter-spacing:1px;margin-left:6px;}
+.think-btn{font-family:var(--mono);font-size:8px;padding:3px 8px;border-radius:2px;
+  border:1px solid var(--b);background:transparent;color:var(--td);cursor:pointer;
+  transition:.15s;letter-spacing:.5px;}
+.think-btn:hover{border-color:var(--cy);color:var(--cy);}
+.think-btn.active{border-color:var(--cy);color:var(--cy);
+  background:rgba(0,212,255,.08);box-shadow:var(--glow-c);}
+.model-sel{font-family:var(--mono);font-size:8px;background:#020a04;
+  border:1px solid var(--b);color:var(--g);padding:3px 6px;border-radius:2px;
+  cursor:pointer;margin-right:auto;}
+.model-sel:focus{outline:none;border-color:var(--g);}
+/* ── Think Block (reasoning display) ── */
+.think-block{background:rgba(0,212,255,.04);border:1px solid rgba(0,212,255,.18);
+  border-radius:2px;margin:4px 0;overflow:hidden;}
+.think-summary{font-family:var(--mono);font-size:8px;color:var(--cy);padding:4px 8px;
+  cursor:pointer;display:flex;align-items:center;gap:5px;
+  border-bottom:1px solid rgba(0,212,255,.1);list-style:none;}
+.think-summary::before{content:'▶';font-size:7px;transition:.2s;}
+details[open] .think-summary::before{content:'▼';}
+.think-content{font-family:var(--mono);font-size:9px;color:rgba(0,212,255,.75);
+  padding:7px 10px;line-height:1.6;white-space:pre-wrap;max-height:200px;overflow-y:auto;}
+.think-content::-webkit-scrollbar{width:2px;}
+.think-content::-webkit-scrollbar-thumb{background:rgba(0,212,255,.25);}
 """
 
 HTML_LOGIN = """<!DOCTYPE html>
@@ -651,11 +720,27 @@ HTML_DASHBOARD = """<!DOCTYPE html>
 <aside class="terminal">
   <div class="t-hdr">
     <div>
-      <div class="t-htitle">// AMEEN AI CORE</div>
+      <div class="t-htitle">// AMEEN AI CORE · DeepSeek-V4</div>
       <div class="t-bknd" id="t-backend">{{ backend }}</div>
     </div>
     <div class="t-hstatus"><span class="t-dot"></span>ACTIVE</div>
   </div>
+
+  <!-- Model + Thinking Mode Bar -->
+  <div class="think-bar">
+    <select class="model-sel" id="model-sel" title="اختر النموذج">
+      <option value="deepseek-v4-flash">⚡ V4-Flash (1M)</option>
+      <option value="deepseek-v4-pro">🧠 V4-Pro (Deep)</option>
+      <option value="granite-nano">🔧 Granite (Fix)</option>
+      <option value="mimo-pro">🔬 MiMo (Reason)</option>
+      <option value="deepseek-v3">💾 V3 (Fallback)</option>
+    </select>
+    <span class="think-lbl">THINK:</span>
+    <button class="think-btn active" id="tm-off"  onclick="setThinkMode('non-think',this)">OFF</button>
+    <button class="think-btn"        id="tm-high" onclick="setThinkMode('think-high',this)">HIGH</button>
+    <button class="think-btn"        id="tm-max"  onclick="setThinkMode('think-max',this)">MAX ★</button>
+  </div>
+
   <div class="t-body" id="tlog">
     <div class="tline">
       <span class="tp">[AMEEN]</span>
@@ -663,7 +748,7 @@ HTML_DASHBOARD = """<!DOCTYPE html>
     </div>
     <div class="tline">
       <span class="tp">[SYS]</span>
-      <span class="to" style="color:var(--td)">قاعدة المعرفة: {{ kb_count }} ملف · السيادة: مُفعَّلة</span>
+      <span class="to" style="color:var(--td)">قاعدة المعرفة: {{ kb_count }} ملف · DeepSeek-V4 · السيادة: مُفعَّلة</span>
     </div>
   </div>
   <div class="t-inp-row">
@@ -833,29 +918,76 @@ async function scanDockerfile(){
   }catch(e){el.innerHTML='<div class="tline"><span class="to err">ERROR: '+e.message+'</span></div>';}
 }
 
-// AI Terminal (with conversation history)
+// ── AI Terminal — DeepSeek-V4 with Thinking Modes ──────────────────────────
 var _history=[];
+var _thinkMode='non-think';
+var _modelKey='deepseek-v4-flash';
+
+function setThinkMode(mode, btn){
+  _thinkMode=mode;
+  document.querySelectorAll('.think-btn').forEach(function(b){b.classList.remove('active');});
+  btn.classList.add('active');
+  var labels={'non-think':'⚡ سريع','think-high':'🧠 تفكير','think-max':'★ أقصى'};
+  addLine('[SYS]','وضع التفكير: '+labels[mode],'');
+}
+
+document.getElementById('model-sel').addEventListener('change',function(){
+  _modelKey=this.value;
+  addLine('[SYS]','النموذج: '+this.options[this.selectedIndex].text,'');
+});
+
 function addLine(prompt,text,cls){
   var tlog=document.getElementById('tlog');
   var div=document.createElement('div');div.className='tline';
-  div.innerHTML='<span class="tp">'+prompt+'</span><span class="to '+(cls||'')+'">'+text+'</span>';
+  div.innerHTML='<span class="tp">'+prompt+'</span><span class="to '+(cls||'')+'">'+
+    text.replace(/</g,'&lt;').replace(/>/g,'&gt;')+'</span>';
   tlog.appendChild(div);tlog.scrollTop=tlog.scrollHeight;return div;
 }
+
+function _renderThinkBlock(thinking, tlog){
+  if(!thinking)return;
+  var block=document.createElement('details');block.className='think-block';
+  var summ=document.createElement('summary');summ.className='think-summary';
+  summ.textContent='💭 تفكير الذكاء ('+thinking.split('\\n').length+' سطر) — انقر للعرض';
+  var content=document.createElement('div');content.className='think-content';
+  content.textContent=thinking;
+  block.appendChild(summ);block.appendChild(content);
+  tlog.appendChild(block);tlog.scrollTop=tlog.scrollHeight;
+}
+
+function _parseThinking(text){
+  var re=/<think>([\s\S]*?)<\/think>/i;
+  var m=text.match(re);
+  var thinking=m?m[1].trim():'';
+  var answer=text.replace(/<think>[\s\S]*?<\/think>/gi,'').trim();
+  return{thinking:thinking,answer:answer};
+}
+
 function quickAsk(text){document.getElementById('t-inp').value=text;sendMsg();}
 function handleKey(e){if(e.key==='Enter')sendMsg();}
+
 async function sendMsg(){
   var inp=document.getElementById('t-inp');
   var text=inp.value.trim();if(!text)return;
   inp.value='';
   addLine('[USER]',text,'');
   _history.push({role:'user',content:text});
+  var tlog=document.getElementById('tlog');
   var aiDiv=addLine('[AMEEN]','','ai');
   var aiSpan=aiDiv.querySelector('.to');
   aiSpan.textContent='…';
+  if(_thinkMode!=='non-think'){
+    aiSpan.textContent='🧠 جارٍ التفكير…';
+  }
   try{
     var resp=await fetch('/api/chat',{method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({message:text,history:_history.slice(-6)})});
+      body:JSON.stringify({
+        message:text,
+        history:_history.slice(-6),
+        thinking_mode:_thinkMode,
+        model_key:_modelKey
+      })});
     var reader=resp.body.getReader(),decoder=new TextDecoder();
     aiSpan.textContent='';var full='';
     while(true){
@@ -863,12 +995,29 @@ async function sendMsg(){
       decoder.decode(rd.value).split('\\n').forEach(function(line){
         if(!line.startsWith('data: '))return;
         var d=line.slice(6).trim();if(d==='[DONE]')return;
-        try{var p=JSON.parse(d);if(p.delta){full+=p.delta;aiSpan.textContent=full;}}catch(e){}
+        try{
+          var p=JSON.parse(d);
+          if(p.delta){
+            full+=p.delta;
+            // أثناء الـ streaming: اعرض النص كاملاً (بما فيه <think>)
+            aiSpan.textContent=full.length>300?'…'+full.slice(-300):full;
+          }
+        }catch(ex){}
       });
-      document.getElementById('tlog').scrollTop=document.getElementById('tlog').scrollHeight;
+      tlog.scrollTop=tlog.scrollHeight;
     }
-    if(full)_history.push({role:'assistant',content:full});
-  }catch(e){aiSpan.textContent='⚠ خطأ في الاتصال بـ AI';aiSpan.className='to err';}
+    // بعد اكتمال الـ stream: فصل الـ thinking عن الجواب
+    var parsed=_parseThinking(full);
+    aiDiv.remove();  // أزل الـ div المؤقت
+    if(parsed.thinking){
+      _renderThinkBlock(parsed.thinking,tlog);
+    }
+    var finalDiv=addLine('[AMEEN]',parsed.answer||full,'ai');
+    if(_history.length>0)_history.push({role:'assistant',content:parsed.answer||full});
+  }catch(e){
+    aiSpan.textContent='⚠ خطأ: '+e.message;
+    aiSpan.className='to err';
+  }
 }
 
 loadStats();
@@ -924,8 +1073,13 @@ def chat_stream():
     data = request.get_json(silent=True) or {}
     message = str(data.get("message", ""))[:2000]
     history = data.get("history", [])
+    thinking_mode = data.get("thinking_mode", "non-think")
+    model_key = data.get("model_key") or None
+    # التحقق من القيم المسموحة فقط
+    if thinking_mode not in ("non-think", "think-high", "think-max"):
+        thinking_mode = "non-think"
     return Response(
-        stream_with_context(_ai_stream(message, history)),
+        stream_with_context(_ai_stream(message, history, thinking_mode, model_key)),
         mimetype="text/event-stream",
         headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
     )
@@ -934,7 +1088,30 @@ def chat_stream():
 @app.route("/api/ai-status")
 @login_required
 def ai_status():
-    return jsonify({"backend": _active_backend(), "gemini": bool(GEMINI_KEY)})
+    return jsonify({
+        "backend": _active_backend(),
+        "gemini": bool(GEMINI_KEY),
+        "models": list(AVAILABLE_MODELS.keys()),
+        "thinking_modes": ["non-think", "think-high", "think-max"],
+    })
+
+
+@app.route("/api/models")
+@login_required
+def list_models():
+    """يُعيد النماذج المُعرَّفة + يحاول الاستعلام عن Docker Model Runner."""
+    available = []
+    try:
+        from openai import OpenAI
+        client = OpenAI(base_url=MODEL_URL, api_key="unused")
+        resp = client.models.list()
+        available = [m.id for m in resp.data]
+    except Exception:
+        pass
+    return jsonify({
+        "configured": AVAILABLE_MODELS,
+        "runner_available": available,
+    })
 
 
 @app.route("/api/scan-dockerfile", methods=["POST"])
