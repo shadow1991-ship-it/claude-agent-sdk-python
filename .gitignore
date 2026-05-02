@@ -17,12 +17,15 @@ uv.lock
 
 # Environment & secrets — NEVER commit these
 .env
-.env.*
+.env.local
+.env.production
+.env.staging
 *.secret
 *SECRETS*
 *secrets*
 empire/.env
 sentinel-guard/.env
+# NOTE: .env.example files ARE committed (they contain no secrets)
 
 # RSA keys
 sentinel-guard/keys/*.pem

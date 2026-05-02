@@ -58,7 +58,9 @@ class Settings(BaseSettings):
     # Task-routed models (all free via Docker Model Runner)
     AI_MODEL_FAST: str = "ai/granite-4.0-nano"       # AutoFixer, code gen < 2s
     AI_MODEL_DEEP: str = "ai/deepseek-v4-pro"        # Dockerfile analysis, CVE reasoning
-    AI_MODEL_GENERAL: str = "ai/deepseek-v4-flash"   # Dashboard chatbot, SSE Q&A
+    AI_MODEL_GENERAL: str = "ai/deepseek-v4-flash"   # Dashboard chatbot, SSE Q&A (1M context)
+    AI_MODEL_REASON: str = "ai/mimo-v2.5-pro"        # Multi-step reasoning, logic chains (7B)
+    AI_MODEL_FALLBACK: str = "ai/deepseek-v3-0324"   # Fallback when V4 unavailable
 
     # AWS Lambda serverless mode (optional)
     LAMBDA_MODE: bool = False
