@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.core.database import get_db
 from app.api.deps import get_current_user
-from app.main import limiter
+from app.core.limiter import limiter
 from app.models.asset import Asset, VerificationStatus
 from app.models.scan import Scan, ScanStatus, ScanFinding
 from app.models.user import User
