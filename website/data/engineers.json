@@ -1,0 +1,74 @@
+[
+  {
+    "id": 1,
+    "name": "shadow1991-ship-it",
+    "title": "Security Engineer & AI Builder",
+    "skills": ["Python", "FastAPI", "Docker", "Security Scanning", "Ollama", "LLM"],
+    "location": "Private Server 🔒",
+    "github": "https://github.com/shadow1991-ship-it",
+    "projects": ["Sentinel Guard", "AI AutoFixer", "SARIF Export"],
+    "bio": "مهندس أمن يبني أنظمة فحص متكاملة مع AI محلي.",
+    "available": true,
+    "level": "Senior"
+  },
+  {
+    "id": 2,
+    "name": "alice-dev",
+    "title": "Backend Engineer",
+    "skills": ["Go", "Rust", "PostgreSQL", "gRPC", "Kubernetes"],
+    "location": "Berlin, DE",
+    "github": "#",
+    "projects": ["distributed-cache", "api-gateway"],
+    "bio": "مهندسة backend متخصصة في الأنظمة الموزعة والأداء العالي.",
+    "available": true,
+    "level": "Senior"
+  },
+  {
+    "id": 3,
+    "name": "bob-security",
+    "title": "AppSec Engineer",
+    "skills": ["SAST", "DAST", "Burp Suite", "Python", "Nuclei"],
+    "location": "Dubai, UAE",
+    "github": "#",
+    "projects": ["vuln-scanner", "pentest-toolkit"],
+    "bio": "متخصص في اختبار الاختراق وأمن التطبيقات.",
+    "available": false,
+    "level": "Mid"
+  },
+  {
+    "id": 4,
+    "name": "carol-ml",
+    "title": "ML Engineer",
+    "skills": ["PyTorch", "Transformers", "ONNX", "FastAPI", "Docker"],
+    "location": "Cairo, EG",
+    "github": "#",
+    "projects": ["local-llm-server", "fine-tuner"],
+    "bio": "مهندسة تعلم آلي متخصصة في نشر النماذج محلياً.",
+    "available": true,
+    "level": "Senior"
+  },
+  {
+    "id": 5,
+    "name": "dave-devops",
+    "title": "DevOps / Platform Engineer",
+    "skills": ["Terraform", "Ansible", "GitHub Actions", "Docker", "Linux"],
+    "location": "Riyadh, SA",
+    "github": "#",
+    "projects": ["infra-as-code", "ci-templates"],
+    "bio": "مهندس بنية تحتية يبني pipelines CI/CD آمنة وقابلة للتوسع.",
+    "available": true,
+    "level": "Mid"
+  },
+  {
+    "id": 6,
+    "name": "eve-frontend",
+    "title": "Frontend Engineer",
+    "skills": ["React", "TypeScript", "WebGL", "Three.js", "Tailwind"],
+    "location": "Amman, JO",
+    "github": "#",
+    "projects": ["security-dashboard", "realtime-viz"],
+    "bio": "مهندسة frontend متخصصة في واجهات الأمن والـ real-time visualization.",
+    "available": false,
+    "level": "Mid"
+  }
+]

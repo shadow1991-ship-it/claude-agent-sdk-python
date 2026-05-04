@@ -33,9 +33,9 @@ SENTINEL_API = os.getenv("SENTINEL_API_URL", "http://localhost:8000/api/v1")
 GEMINI_KEY   = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
 MODEL_URL    = os.getenv("OLLAMA_URL", os.getenv(
-    "DOCKER_MODEL_RUNNER_URL", "http://localhost:12434/engines/llama.cpp/v1"
+    "DOCKER_MODEL_RUNNER_URL", "http://localhost:11434/v1"
 ))
-AI_MODEL         = os.getenv("OLLAMA_MODEL", os.getenv("AI_MODEL_GENERAL", "ai/deepseek-v4-flash"))
+AI_MODEL         = os.getenv("OLLAMA_MODEL", os.getenv("AI_MODEL_GENERAL", "phi3"))
 AI_MODEL_FAST    = os.getenv("AI_MODEL_FAST",    "ai/granite-4.0-nano")
 AI_MODEL_DEEP    = os.getenv("AI_MODEL_DEEP",    "ai/deepseek-v4-pro")
 AI_MODEL_REASON  = os.getenv("AI_MODEL_REASON",  "ai/mimo-v2.5-pro")

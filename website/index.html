@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>The Eye of the Smart Monkey</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Cairo:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg:       #03050a;
+      --panel:    #080d14;
+      --border:   #0f2040;
+      --accent:   #00c3ff;
+      --accent2:  #7b2fff;
+      --green:    #00ff88;
+      --red:      #ff3b5c;
+      --text:     #c8d8f0;
+      --muted:    #4a6080;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Cairo', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Canvas background ─────────────────────── */
+    #bg-canvas {
+      position: fixed; inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      opacity: .35;
+    }
+
+    /* ── Layout ────────────────────────────────── */
+    .shell {
+      position: relative; z-index: 1;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+    }
+
+    /* ── Nav ───────────────────────────────────── */
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: .8rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      background: rgba(8,13,20,.85);
+      backdrop-filter: blur(10px);
+      position: sticky; top: 0; z-index: 100;
+    }
+    nav .logo {
+      font-family: 'Fira Code', monospace;
+      font-size: .9rem;
+      color: var(--accent);
+      letter-spacing: .05em;
+    }
+    nav .logo span { color: var(--green); }
+    nav .links { display: flex; gap: 1.5rem; }
+    nav .links a {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: .85rem;
+      transition: color .2s;
+    }
+    nav .links a:hover { color: var(--accent); }
+
+    /* ── Hero ──────────────────────────────────── */
+    .hero {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 3rem;
+      align-items: center;
+      padding: 5rem 0 4rem;
+    }
+    @media (max-width: 700px) {
+      .hero { grid-template-columns: 1fr; text-align: center; }
+      .avatar-wrap { margin: 0 auto; }
+    }
+
+    .hero-title {
+      font-size: clamp(1.6rem, 4vw, 2.8rem);
+      font-weight: 700;
+      line-height: 1.25;
+      color: #fff;
+    }
+    .hero-title .highlight {
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .hero-sub {
+      margin-top: 1rem;
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.7;
+      max-width: 550px;
+    }
+    .hero-tags {
+      margin-top: 1.5rem;
+      display: flex; flex-wrap: wrap; gap: .5rem;
+    }
+    .tag {
+      padding: .25rem .75rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      font-family: 'Fira Code', monospace;
+      font-size: .72rem;
+      color: var(--accent);
+      background: rgba(0,195,255,.05);
+    }
+
+    .hero-btns {
+      margin-top: 2rem;
+      display: flex; flex-wrap: wrap; gap: 1rem;
+    }
+    .btn {
+      display: inline-flex; align-items: center; gap: .5rem;
+      padding: .65rem 1.4rem;
+      border-radius: 8px;
+      font-size: .9rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all .2s;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff;
+      border: none;
+    }
+    .btn-primary:hover { opacity: .85; transform: translateY(-2px); }
+    .btn-outline {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+
+    .avatar-wrap {
+      position: relative;
+      width: 160px; height: 160px;
+    }
+    .avatar-ring {
+      position: absolute; inset: -6px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      background: linear-gradient(135deg,var(--accent),var(--accent2)) border-box;
+      -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: destination-out;
+      mask-composite: exclude;
+      animation: spin 8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .avatar {
+      width: 100%; height: 100%;
+      border-radius: 50%;
+      object-fit: cover;
+      background: var(--panel);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 4rem;
+    }
+
+    /* ── Status bar ────────────────────────────── */
+    .status-bar {
+      display: flex; flex-wrap: wrap; gap: 1rem;
+      padding: 1rem 1.5rem;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 3rem;
+    }
+    .status-item {
+      display: flex; align-items: center; gap: .5rem;
+      font-family: 'Fira Code', monospace;
+      font-size: .78rem;
+    }
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot-green { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2s infinite; }
+    .dot-blue  { background: var(--accent); }
+    .dot-purple{ background: var(--accent2); }
+    @keyframes pulse { 50% { opacity: .4; } }
+
+    /* ── Section ───────────────────────────────── */
+    .section { margin-bottom: 4rem; }
+    .section-title {
+      font-family: 'Fira Code', monospace;
+      font-size: .75rem;
+      color: var(--accent);
+      letter-spacing: .15em;
+      text-transform: uppercase;
+      margin-bottom: 1.5rem;
+      display: flex; align-items: center; gap: .75rem;
+    }
+    .section-title::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* ── Cards grid ────────────────────────────── */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1.2rem;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.4rem;
+      transition: border-color .2s, transform .2s;
+    }
+    .card:hover { border-color: var(--accent); transform: translateY(-3px); }
+    .card-icon { font-size: 1.8rem; margin-bottom: .75rem; }
+    .card h3 { font-size: 1rem; color: #fff; margin-bottom: .5rem; }
+    .card p { font-size: .85rem; color: var(--muted); line-height: 1.6; }
+    .card-link {
+      display: inline-flex; align-items: center; gap: .3rem;
+      margin-top: 1rem; font-size: .8rem;
+      color: var(--accent); text-decoration: none;
+    }
+    .card-link:hover { text-decoration: underline; }
+
+    /* ── Skill bars ────────────────────────────── */
+    .skills { display: flex; flex-direction: column; gap: .8rem; }
+    .skill-row { display: flex; flex-direction: column; gap: .3rem; }
+    .skill-header { display: flex; justify-content: space-between; font-size: .85rem; }
+    .skill-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+    .skill-fill {
+      height: 100%;
+      border-radius: 3px;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      width: 0;
+      transition: width 1.2s ease;
+    }
+
+    /* ── Timeline ──────────────────────────────── */
+    .timeline { position: relative; padding-right: 2rem; }
+    .timeline::before {
+      content: '';
+      position: absolute;
+      right: 7px; top: 8px; bottom: 8px;
+      width: 2px;
+      background: var(--border);
+    }
+    .tl-item { position: relative; margin-bottom: 1.8rem; }
+    .tl-dot {
+      position: absolute; right: -2rem;
+      top: 6px;
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 3px solid var(--bg);
+    }
+    .tl-date { font-family: 'Fira Code', monospace; font-size: .72rem; color: var(--muted); margin-bottom: .3rem; }
+    .tl-title { font-weight: 600; color: #fff; margin-bottom: .3rem; }
+    .tl-desc { font-size: .85rem; color: var(--muted); line-height: 1.6; }
+
+    /* ── AI chat teaser ────────────────────────── */
+    .ai-box {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2rem;
+      text-align: center;
+    }
+    .ai-box .ai-icon { font-size: 3rem; margin-bottom: 1rem; }
+    .ai-box h3 { font-size: 1.2rem; color: #fff; margin-bottom: .5rem; }
+    .ai-box p { color: var(--muted); font-size: .9rem; margin-bottom: 1.5rem; line-height: 1.6; }
+    .lock-badge {
+      display: inline-flex; align-items: center; gap: .4rem;
+      padding: .3rem .9rem;
+      background: rgba(123,47,255,.15);
+      border: 1px solid rgba(123,47,255,.3);
+      border-radius: 999px;
+      font-size: .75rem; color: var(--accent2);
+      margin-bottom: 1.5rem;
+    }
+
+    /* ── Footer ────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 2rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+      font-family: 'Fira Code', monospace;
+      font-size: .75rem;
+      color: var(--muted);
+    }
+    footer a { color: var(--muted); text-decoration: none; }
+    footer a:hover { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <canvas id="bg-canvas"></canvas>
+
+  <!-- Navigation -->
+  <nav>
+    <div class="logo">&gt; <span>sentinel</span>://profile</div>
+    <div class="links">
+      <a href="#projects">المشاريع</a>
+      <a href="#skills">المهارات</a>
+      <a href="engineers.html">دليل المهندسين</a>
+      <a href="https://github.com/shadow1991-ship-it" target="_blank">GitHub</a>
+    </div>
+  </nav>
+
+  <div class="shell">
+
+    <!-- Hero -->
+    <section class="hero">
+      <div>
+        <h1 class="hero-title">
+          <span class="highlight">عين القرد الذكي</span><br/>
+          مهندس أمن &amp; بنية تحتية
+        </h1>
+        <p class="hero-sub">
+          أبني أنظمة فحص أمني موثوقة وأدوات ذكاء اصطناعي محلية
+          تعمل على جهازك دون اعتماد على سحابة خارجية.
+          خصوصية كاملة، أداء حقيقي.
+        </p>
+        <div class="hero-tags">
+          <span class="tag">FastAPI</span>
+          <span class="tag">Docker</span>
+          <span class="tag">Celery</span>
+          <span class="tag">PostgreSQL</span>
+          <span class="tag">Security Scanning</span>
+          <span class="tag">AI / LLM</span>
+          <span class="tag">Tailscale</span>
+          <span class="tag">Ollama</span>
+        </div>
+        <div class="hero-btns">
+          <a class="btn btn-primary" href="engineers.html">🔍 دليل المهندسين</a>
+          <a class="btn btn-outline" href="https://github.com/shadow1991-ship-it" target="_blank">GitHub ↗</a>
+        </div>
+      </div>
+      <div class="avatar-wrap">
+        <div class="avatar-ring"></div>
+        <div class="avatar">🐒</div>
+      </div>
+    </section>
+
+    <!-- Status Bar -->
+    <div class="status-bar">
+      <div class="status-item">
+        <div class="dot dot-green"></div>
+        <span>Sentinel Guard API — يعمل</span>
+      </div>
+      <div class="status-item">
+        <div class="dot dot-blue"></div>
+        <span>Ollama phi3 — نموذج محلي</span>
+      </div>
+      <div class="status-item">
+        <div class="dot dot-purple"></div>
+        <span>Tailscale VPN — متصل</span>
+      </div>
+      <div class="status-item">
+        <div class="dot dot-green"></div>
+        <span>Ubuntu Server 24 — 3 cores</span>
+      </div>
+    </div>
+
+    <!-- Projects -->
+    <section class="section" id="projects">
+      <div class="section-title">المشاريع</div>
+      <div class="cards">
+        <div class="card">
+          <div class="card-icon">🛡️</div>
+          <h3>Sentinel Guard</h3>
+          <p>منصة فحص أمني احترافية — Nmap + Shodan + SSL + HTTP Headers + Dockerfile scanner + SBOM. تقارير موقّعة RSA-2048.</p>
+          <a class="card-link" href="https://github.com/shadow1991-ship-it/claude-agent-sdk-python" target="_blank">عرض الكود ↗</a>
+        </div>
+        <div class="card">
+          <div class="card-icon">🤖</div>
+          <h3>AI AutoFixer</h3>
+          <p>كل ثغرة يكتشفها الـ scanner يولّد الـ AI كود الإصلاح جاهزاً. يعمل محلياً عبر Docker Model Runner — مجاناً بلا API key.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">🔍</div>
+          <h3>SARIF Export</h3>
+          <p>تصدير نتائج الفحص بصيغة SARIF 2.1.0 — متوافق مع GitHub Code Scanning وVS Code وAzure DevOps.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">🌐</div>
+          <h3>Engineer Directory</h3>
+          <p>دليل مهندسين قابل للبحث — مبني بـ Fuse.js للبحث الفوري بدون سيرفر. يعمل offline كاملاً.</p>
+          <a class="card-link" href="engineers.html">استعرض الدليل ←</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Skills -->
+    <section class="section" id="skills">
+      <div class="section-title">المهارات التقنية</div>
+      <div class="skills">
+        <div class="skill-row">
+          <div class="skill-header"><span>Security Engineering</span><span>90%</span></div>
+          <div class="skill-bar"><div class="skill-fill" data-w="90"></div></div>
+        </div>
+        <div class="skill-row">
+          <div class="skill-header"><span>Python / FastAPI</span><span>85%</span></div>
+          <div class="skill-bar"><div class="skill-fill" data-w="85"></div></div>
+        </div>
+        <div class="skill-row">
+          <div class="skill-header"><span>Docker / Infrastructure</span><span>80%</span></div>
+          <div class="skill-bar"><div class="skill-fill" data-w="80"></div></div>
+        </div>
+        <div class="skill-row">
+          <div class="skill-header"><span>AI / LLM Integration</span><span>75%</span></div>
+          <div class="skill-bar"><div class="skill-fill" data-w="75"></div></div>
+        </div>
+        <div class="skill-row">
+          <div class="skill-header"><span>PostgreSQL / Redis</span><span>70%</span></div>
+          <div class="skill-bar"><div class="skill-fill" data-w="70"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Timeline -->
+    <section class="section" id="timeline">
+      <div class="section-title">المسيرة</div>
+      <div class="timeline">
+        <div class="tl-item">
+          <div class="tl-dot"></div>
+          <div class="tl-date">2026 — الحاضر</div>
+          <div class="tl-title">Sentinel Guard Platform</div>
+          <div class="tl-desc">بناء منصة فحص أمني كاملة مع دعم AI محلي عبر Docker Model Runner وOllama.</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot"></div>
+          <div class="tl-date">2026</div>
+          <div class="tl-title">Private AI Server</div>
+          <div class="tl-desc">إعداد سيرفر Ubuntu 24 خاص مع Tailscale VPN وOllama phi3 — لا بيانات تغادر الجهاز.</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot"></div>
+          <div class="tl-date">2026</div>
+          <div class="tl-title">GitHub Profile Launch</div>
+          <div class="tl-desc">انطلاق الحضور العام على GitHub وبدء نشر مشاريع الأمن والذكاء الاصطناعي.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- AI Teaser -->
+    <section class="section">
+      <div class="section-title">الذكاء الاصطناعي الخاص</div>
+      <div class="ai-box">
+        <div class="ai-icon">🧠</div>
+        <div class="lock-badge">🔒 Tailscale فقط — VPN خاص</div>
+        <h3>AI يقرأ كل الكود ويجيب على أسئلتك</h3>
+        <p>
+          النموذج يعمل على سيرفرك الخاص عبر Ollama + phi3.<br/>
+          يقرأ جميع ملفات المشروع ويجيب على أسئلة الكود، يراجع الـ PR، يكتشف الأخطاء.<br/>
+          <strong>لا بيانات تصل لأي سحابة خارجية.</strong>
+        </p>
+        <p style="font-family:'Fira Code',monospace;font-size:.78rem;color:var(--accent);">
+          الوصول: http://100.109.223.64:5000 (Tailscale فقط)
+        </p>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Footer -->
+  <footer>
+    <span>The eye of the smart monkey · <a href="https://github.com/shadow1991-ship-it">@shadow1991-ship-it</a></span>
+    <span>Sentinel Guard v1.0 · مبني بـ FastAPI + DeepSeek + Ollama</span>
+  </footer>
+
+  <script>
+    // ── Particle canvas ─────────────────────────────────────
+    const canvas = document.getElementById('bg-canvas');
+    const ctx = canvas.getContext('2d');
+    let W, H, particles = [];
+
+    function resize() {
+      W = canvas.width  = window.innerWidth;
+      H = canvas.height = window.innerHeight;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    for (let i = 0; i < 60; i++) {
+      particles.push({
+        x: Math.random() * 1920,
+        y: Math.random() * 1080,
+        r: Math.random() * 1.5 + .5,
+        dx: (Math.random() - .5) * .3,
+        dy: (Math.random() - .5) * .3,
+        alpha: Math.random() * .6 + .2,
+      });
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, W, H);
+      particles.forEach(p => {
+        p.x += p.dx; p.y += p.dy;
+        if (p.x < 0) p.x = W; if (p.x > W) p.x = 0;
+        if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+        ctx.fillStyle = `rgba(0,195,255,${p.alpha})`;
+        ctx.fill();
+      });
+      // draw lines between close particles
+      for (let i = 0; i < particles.length; i++) {
+        for (let j = i+1; j < particles.length; j++) {
+          const dx = particles[i].x - particles[j].x;
+          const dy = particles[i].y - particles[j].y;
+          const d  = Math.sqrt(dx*dx+dy*dy);
+          if (d < 120) {
+            ctx.beginPath();
+            ctx.moveTo(particles[i].x, particles[i].y);
+            ctx.lineTo(particles[j].x, particles[j].y);
+            ctx.strokeStyle = `rgba(0,195,255,${.15*(1-d/120)})`;
+            ctx.lineWidth = .5;
+            ctx.stroke();
+          }
+        }
+      }
+      requestAnimationFrame(draw);
+    }
+    draw();
+
+    // ── Skill bar animation ──────────────────────────────────
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          e.target.querySelectorAll('.skill-fill').forEach(bar => {
+            bar.style.width = bar.dataset.w + '%';
+          });
+        }
+      });
+    }, { threshold: .3 });
+    document.querySelectorAll('.skills').forEach(el => observer.observe(el));
+  </script>
+</body>
+</html>
