@@ -48,7 +48,7 @@ web_dashboard.py         ← واجهة الويب (Flask + DeepSeek V4 Flash AI
 ## الخطوة 1 — تنزيل المشروع
 
 ```bash
-git clone https://github.com/shadow1991-ship-it/claude-agent-sdk-python.git
+git clone https://github.com/ass1010/claude-agent-sdk-python.git
 cd claude-agent-sdk-python
 ```
 
