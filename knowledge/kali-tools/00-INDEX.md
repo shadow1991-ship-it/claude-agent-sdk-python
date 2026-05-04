@@ -15,6 +15,13 @@
 | `04-crypto-passwords.md` | التشفير: OpenSSL, GPG, bcrypt, Hashcat, John |
 | `05-docker-security.md` | أمن Docker: Trivy, Syft, Dockerfile best practices |
 | `06-network-analysis.md` | تحليل الشبكة: tcpdump, iptables, UFW, Fail2ban |
+| `07-pentest-frameworks.md` | أطر الاختبار: Metasploit, Burp Suite, OWASP ZAP |
+| `08-offensive-tools.md` | أدوات متقدمة: Nuclei, SQLMap, XSStrike, ffuf |
+| `09-ai-core-setup.md` | إعداد AI محلي: Ollama, Docker Model Runner, phi3 |
+| `10-security-libraries.md` | مكتبات Python الأمنية: cryptography, httpx, scapy |
+| `11-credential-analysis.md` | تحليل بيانات الاعتماد: Hashcat, John, CrackStation |
+| `12-ai-models-guide.md` | دليل نماذج الذكاء: DeepSeek, Granite, Kimi, phi3 |
+| `13-web-app-scanning.md` | **فحص المواقع الشامل**: دليل كامل خطوة بخطوة عبر Sentinel Guard |
 
 ---
 

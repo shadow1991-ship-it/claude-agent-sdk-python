@@ -1,6 +1,10 @@
 import asyncio
+import json
 import logging
-import nmap3
+import re
+import shutil
+import subprocess
+import xml.etree.ElementTree as ET
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -10,9 +14,12 @@ DEFAULT_ARGS = "-sV -sC --open -T4 --host-timeout 120s"
 
 
 class NmapScanner:
-    """Active port and service scanning using Nmap."""
+    """Active port and service scanning using nmap CLI (no nmap3 dependency)."""
 
     async def scan(self, target: str, arguments: str = DEFAULT_ARGS) -> dict:
+        if not shutil.which("nmap"):
+            logger.warning("nmap binary not found — skipping port scan")
+            return {"error": "nmap not installed", "hosts": []}
         loop = asyncio.get_event_loop()
         try:
             result = await asyncio.wait_for(
@@ -22,38 +29,50 @@ class NmapScanner:
             return result
         except asyncio.TimeoutError:
             logger.warning("Nmap scan timed out for %s", target)
-            return {"error": "Scan timed out"}
+            return {"error": "Scan timed out", "hosts": []}
         except Exception as exc:
             logger.error("Nmap error for %s: %s", target, exc)
-            return {"error": str(exc)}
+            return {"error": str(exc), "hosts": []}
 
     def _run(self, target: str, arguments: str) -> dict:
-        nm = nmap3.Nmap()
-        raw = nm.scan_command(target, arg=arguments)
-        return self._normalize(raw)
+        cmd = ["nmap", "-oX", "-"] + arguments.split() + [target]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if proc.returncode != 0 and not proc.stdout.strip():
+            return {"error": proc.stderr[:500], "hosts": []}
+        return self._parse_xml(proc.stdout)
 
-    def _normalize(self, raw: dict) -> dict:
+    def _parse_xml(self, xml_output: str) -> dict:
         hosts = []
-        for ip, data in raw.items():
-            if not isinstance(data, dict):
-                continue
+        try:
+            root = ET.fromstring(xml_output)
+        except ET.ParseError:
+            return {"hosts": []}
+        for host_el in root.findall("host"):
+            addr_el = host_el.find("address")
+            ip = addr_el.get("addr", "") if addr_el is not None else ""
+            state_el = host_el.find("status")
+            state = state_el.get("state", "") if state_el is not None else ""
+            hostname = ""
+            for hn in host_el.findall("hostnames/hostname"):
+                hostname = hn.get("name", "")
+                break
             ports = []
-            for port_info in data.get("ports", []):
+            for port_el in host_el.findall("ports/port"):
+                state_p = port_el.find("state")
+                svc_el  = port_el.find("service")
+                scripts = []
+                for s in port_el.findall("script"):
+                    scripts.append({"id": s.get("id"), "output": s.get("output", "")})
                 ports.append({
-                    "port": port_info.get("portid"),
-                    "protocol": port_info.get("protocol"),
-                    "state": port_info.get("state"),
-                    "service": port_info.get("service", {}).get("name"),
-                    "product": port_info.get("service", {}).get("product"),
-                    "version": port_info.get("service", {}).get("version"),
-                    "scripts": port_info.get("scripts", []),
+                    "port":     port_el.get("portid"),
+                    "protocol": port_el.get("protocol"),
+                    "state":    state_p.get("state", "") if state_p is not None else "",
+                    "service":  svc_el.get("name", "") if svc_el is not None else "",
+                    "product":  svc_el.get("product", "") if svc_el is not None else "",
+                    "version":  svc_el.get("version", "") if svc_el is not None else "",
+                    "scripts":  scripts,
                 })
-            hosts.append({
-                "ip": ip,
-                "hostname": data.get("hostname", [{}])[0].get("name") if data.get("hostname") else None,
-                "state": data.get("state", {}).get("state"),
-                "ports": ports,
-            })
+            hosts.append({"ip": ip, "hostname": hostname, "state": state, "ports": ports})
         return {"hosts": hosts}
 
     def extract_findings(self, nmap_data: dict) -> list[dict]:
