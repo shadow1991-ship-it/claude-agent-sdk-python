@@ -1,9 +1,10 @@
+from uuid import UUID
 from pydantic import BaseModel
 
 
 class ReportOut(BaseModel):
-    id: str
-    scan_id: str
+    id: UUID
+    scan_id: UUID
     payload: dict
     signature: str
     fingerprint: str

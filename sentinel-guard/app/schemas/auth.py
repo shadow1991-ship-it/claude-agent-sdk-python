@@ -1,3 +1,4 @@
+from uuid import UUID
 from pydantic import BaseModel, EmailStr, Field
 
 
@@ -24,12 +25,12 @@ class RefreshRequest(BaseModel):
 
 
 class UserOut(BaseModel):
-    id: str
+    id: UUID
     email: str
     full_name: str
     is_active: bool
     is_verified: bool
-    organization_id: str | None
+    organization_id: UUID | None
 
     model_config = {"from_attributes": True}
 
@@ -40,9 +41,9 @@ class APIKeyCreate(BaseModel):
 
 
 class APIKeyOut(BaseModel):
-    id: str
+    id: UUID
     name: str
-    key: str  # shown only on creation
+    key: str
     created_at: str
 
     model_config = {"from_attributes": True}

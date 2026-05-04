@@ -1,5 +1,5 @@
+from uuid import UUID
 from pydantic import BaseModel, Field, field_validator
-import ipaddress
 import re
 from app.models.asset import AssetType, VerificationMethod, VerificationStatus
 
@@ -23,7 +23,7 @@ class AssetCreate(BaseModel):
 
 
 class AssetOut(BaseModel):
-    id: str
+    id: UUID
     value: str
     asset_type: AssetType
     description: str | None

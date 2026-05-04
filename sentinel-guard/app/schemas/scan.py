@@ -1,4 +1,5 @@
 import re
+from uuid import UUID
 from pydantic import BaseModel, Field, field_validator
 from app.models.scan import ScanType, ScanStatus, Severity
 
@@ -56,7 +57,7 @@ class ScanRequest(BaseModel):
 
 
 class FindingOut(BaseModel):
-    id: str
+    id: UUID
     title: str
     description: str
     severity: Severity
@@ -77,8 +78,8 @@ class FixOut(BaseModel):
 
 
 class ScanOut(BaseModel):
-    id: str
-    asset_id: str
+    id: UUID
+    asset_id: UUID
     scan_type: ScanType
     status: ScanStatus
     risk_score: float | None
@@ -92,8 +93,8 @@ class ScanOut(BaseModel):
 
 
 class ScanSummary(BaseModel):
-    id: str
-    asset_id: str
+    id: UUID
+    asset_id: UUID
     scan_type: ScanType
     status: ScanStatus
     risk_score: float | None
